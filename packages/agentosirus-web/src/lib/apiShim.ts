@@ -32,6 +32,10 @@ import { tierHistory } from "./contextTiering";
 import { collapse, QecFatalError, type ChainPlan } from "./qec";
 import { appendProvenance } from "./localLedger";
 import { getBackendUrl } from "./onitsirClient";
+// SYNERGY #4 / #2: the offline evidence + pre-filter mirrors live in their own
+// dependency-free module so they can be unit-tested against the authoritative
+// Python semantics. See evidenceMirror.ts for why that matters.
+import { localPreFilter, localVerifyStep } from "./evidenceMirror";
 
 interface AgentMeta {
   id: string;
@@ -225,57 +229,6 @@ async function handleChat(body: Record<string, unknown>): Promise<Response> {
   }
 }
 
-/** SYNERGY #2: local mirror of onitsir-core's Router scoring, used as a
- * pre-filter when no backend is configured (offline mode still benefits). */
-function localPreFilter(roster: Array<{ id: string; name: string; category: string; desc: string }>, goal: string, limit: number) {
-  const terms = (goal.toLowerCase().match(/[a-z][a-z0-9+#-]{1,}/g) || []) as string[];
-  const scored = roster.map((a) => {
-    let score = 0;
-    const cat = a.category.toLowerCase();
-    const name = a.name.toLowerCase();
-    for (const t of terms) {
-      if (t === cat || cat.includes(t)) score += 3;
-      if (name.includes(t)) score += 2;
-    }
-    return { agent: a, score };
-  });
-  return scored
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit)
-    .map((s) => s.agent);
-}
-
-/** SYNERGY #4: local mirror of ChainStepEvidenceProducer's self-check,
- * used when no backend is configured. */
-function localVerifyStep(task: string, output: string): { passed: boolean; summary: string } {
-  const checks: string[] = [];
-  let passed = true;
-  if (output.trim().length < 20) {
-    passed = false;
-    checks.push("FAIL length: output too short");
-  } else {
-    checks.push("PASS length");
-  }
-  const refusalMarkers = ["i cannot help with that", "i'm unable to", "as an ai language model"];
-  if (refusalMarkers.some((m) => output.toLowerCase().includes(m))) {
-    passed = false;
-    checks.push("FAIL refusal marker detected");
-  } else {
-    checks.push("PASS no refusal marker");
-  }
-  // Crude task-relevance signal, mirroring ChainStepEvidenceProducer's
-  // task-keyword overlap check server-side.
-  const taskTerms = (task.toLowerCase().match(/[a-z]{3,}/g) || []).slice(0, 8);
-  const outputLower = output.toLowerCase();
-  if (taskTerms.length > 0 && !taskTerms.some((t) => outputLower.includes(t))) {
-    passed = false;
-    checks.push("FAIL no task-keyword overlap");
-  } else if (taskTerms.length > 0) {
-    checks.push("PASS task-keyword overlap");
-  }
-  return { passed, summary: checks.join("; ") };
-}
 
 async function handleChain(body: Record<string, unknown>): Promise<Response> {
   const message = String(body.message || "");
