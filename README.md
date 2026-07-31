@@ -7,7 +7,7 @@
 <div align="center">
 
 [![CI](https://github.com/Fame510/ONITSIR-WORKFORCE/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fame510/ONITSIR-WORKFORCE/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-257%20passing-brightgreen)](TEST_REPORT.md)
+[![Tests](https://img.shields.io/badge/tests-272%20passing-brightgreen)](TEST_REPORT.md)
 [![Conformance](https://img.shields.io/badge/SP%2F1.0-12%20vectors-blue)](docs/SHACKLE.md)
 [![Code license: AGPL v3](https://img.shields.io/badge/code-AGPL--3.0-blue)](LICENSE)
 [![Spec license: CC BY 4.0](https://img.shields.io/badge/spec-CC%20BY%204.0-lightgrey)](LICENSE-SPEC)
@@ -123,7 +123,7 @@ python -m pytest tests/ -v          # 198 tests
 
 cd ../onitsir-server
 pip install -e .
-python -m pytest tests/ -v          # 15 tests
+python -m pytest tests/ -v          # 30 tests
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -195,8 +195,8 @@ Every ruling is recorded in a hash-chained, optionally Ed25519-signed
 
 ## Test results
 
-**257 automated tests pass** across the whole system — 198 `onitsir-core` and
-15 `onitsir-server` pytest tests, plus 44 `agentosirus-web` vitest tests —
+**272 automated tests pass** across the whole system — 198 `onitsir-core` and
+30 `onitsir-server` pytest tests, plus 44 `agentosirus-web` vitest tests —
 alongside a clean TypeScript strict-mode compile and the 12-vector SP/1.0
 conformance suite. All of it runs in CI on every push across nine job
 instances, against Python 3.10, 3.11 and 3.12, and the merge gate requires all
@@ -207,7 +207,7 @@ Full breakdown, including what is deliberately **not** measured, in
 
 What is not measured, stated here so nothing is inferred from a test count:
 there is no coverage measurement and no coverage gate, no static security
-analysis in CI, and no property-based tests. 257 is a count, not a coverage
+analysis in CI, and no property-based tests. 272 is a count, not a coverage
 figure. See [`docs/ROADMAP.md`](docs/ROADMAP.md) items 6 to 8.
 
 ## Conformance

@@ -73,9 +73,10 @@ any route, including `WS /ws/mission/{id}`, and CORS is `*`. In order:
 - authentication on every route including the WebSocket handshake,
 - authorization so a caller can only read its own missions and ledgers,
 - rate limiting,
-- a CORS allowlist driven by configuration rather than `*`,
-- validated request bodies for `/api/swarm/register` and
-  `/api/swarm/heartbeat`, which currently take raw query parameters.
+- a CORS allowlist driven by configuration rather than `*`.
+
+Closed in v1.0.0: `/api/swarm/register` and `/api/swarm/heartbeat` now take
+validated request bodies rather than raw query parameters.
 
 ## 5. Durable mission state
 

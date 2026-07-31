@@ -11,9 +11,9 @@ implying it.
 | Suite | Count | Command |
 |---|---|---|
 | `onitsir-core` (pytest) | 198 | `cd packages/onitsir-core && python -m pytest tests/ -v` |
-| `onitsir-server` (pytest) | 15 | `cd packages/onitsir-server && python -m pytest tests/ -v` |
+| `onitsir-server` (pytest) | 30 | `cd packages/onitsir-server && python -m pytest tests/ -v` |
 | `agentosirus-web` (vitest) | 44 | `cd packages/agentosirus-web && npm run test` |
-| **Total automated tests** | **257** | |
+| **Total automated tests** | **272** | |
 | TypeScript strict compile | 0 errors | `npx tsc --noEmit` |
 | SP/1.0 conformance vectors | 12 | `onitsir conformance` |
 | Governance type-drift check | pass | `node infra/scripts/sync-shackle-types.mjs --check` |
@@ -57,10 +57,11 @@ type-check, provider-contract conformance check, and a production Vite build.
 | `test_ethics.py` | 5 | Additive tag-weight scoring |
 | `test_workflow.py` | 5 | Phase transitions |
 
-## onitsir-server — 15 tests
+## onitsir-server — 30 tests
 
 | File | Tests | Covers |
 |---|---|---|
+| `test_swarm_routes.py` | 15 | Swarm register and heartbeat body validation, liveness counts, state isolation between clients |
 | `test_api.py` | 10 | Full mission lifecycle, gate, verify-step, audit, HITL, evidence, swarm, events, 404 |
 | `test_transport.py` | 5 | Loopback and HTTP bridge transports |
 
@@ -150,7 +151,7 @@ its tests must change in the same commit — see
 Stated plainly so no reader infers more than CI proves.
 
 - **No coverage measurement.** There is no `pytest-cov` run and no
-  minimum-coverage gate. 257 tests is a count, not a coverage figure. Tracked as
+  minimum-coverage gate. 272 tests is a count, not a coverage figure. Tracked as
   [`docs/ROADMAP.md`](docs/ROADMAP.md) item 6.
 - **No static security analysis in CI.** A manual audit confirms no `eval`,
   `exec`, `os.system`, `subprocess` or `pickle` anywhere in the Python source,

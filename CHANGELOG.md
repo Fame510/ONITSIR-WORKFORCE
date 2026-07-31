@@ -101,7 +101,7 @@ for their own code:
 
 ### Added — tests
 
-257 automated tests: 198 in `onitsir-core`, 15 in `onitsir-server`, and 44
+272 automated tests: 198 in `onitsir-core`, 30 in `onitsir-server`, and 44
 Vitest tests in `agentosirus-web`, plus a strict-mode TypeScript compile and
 the SP/1.0 conformance suite. All nine CI job instances gate merges.
 
@@ -123,6 +123,9 @@ fail-closed system the valuable assertions are about what is denied:
   producers.
 - `evidenceMirror.test.ts` — parity between the offline mirror and the Python
   producer's documented semantics.
+- `test_swarm_routes.py` — swarm register and heartbeat body validation,
+  including that the old query-parameter call now fails rather than silently
+  registering an agent.
 
 ### Fixed
 
@@ -149,6 +152,10 @@ fail-closed system the valuable assertions are about what is denied:
 - Replaced the deprecated `@app.on_event("startup")` hook with a `lifespan`
   context manager.
 - `app/__init__.py` was the only package `__init__` without `__all__`.
+- `/api/swarm/register` and `/api/swarm/heartbeat` took raw query parameters
+  with no validation, and `capabilities` was a comma-separated string that
+  silently split any tag containing a comma. Both now take validated Pydantic
+  bodies.
 
 ### Known limitations
 
@@ -164,6 +171,8 @@ Stated plainly rather than left for a reader to discover:
 - `onitsir-server` has no authentication, no authorization and no rate limiting
   on any route, including the WebSocket endpoint, and CORS is open. Mission
   state is a single-process in-memory dict.
+- There is no coverage measurement, no static security analysis in CI, and no
+  property-based testing. The test count is a count, not a coverage figure.
 - The roster ships 164 metadata records across 14 categories, but only one
   full persona markdown body is included in this release; the CI roster smoke
   test reports the indexed persona count directly.
