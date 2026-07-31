@@ -130,7 +130,7 @@ const rosterRecords = []; // SYNERGY #1: onitsir-core-shaped output
 const seen = new Set();
 
 for (const div of divisions) {
-  for (const filePath of walk(path.join(ROOT, div.id))) {
+  for (const filePath of walk(path.join(PERSONA_ROOT, div.id))) {
     const agent = parseAgentFile(filePath, div.id);
     let slug = agent.id;
     if (seen.has(slug)) slug = div.id + "--" + agent.id;

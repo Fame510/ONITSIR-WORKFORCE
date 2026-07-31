@@ -241,13 +241,13 @@ export default function App() {
       {/* Main Body Layout */}
       <main className="max-w-7xl w-full mx-auto px-6 py-8 flex-1 flex flex-col">
         {/* Dynamic Warning if Key Missing */}
-        {!loading && !error && !process.env.GEMINI_API_KEY && (
+        {!loading && !error && !import.meta.env.VITE_GEMINI_API_KEY && (
           <div className="mb-6 p-4 bg-amber-950/30 border border-amber-500/20 text-amber-300 rounded-xl flex items-start gap-3 shadow-md">
             <Info className="text-amber-400 flex-shrink-0 mt-0.5 animate-pulse" size={18} />
             <div className="flex-1">
               <div className="font-bold text-xs uppercase tracking-widest font-mono">STARK TIP: UNLOCK LIVE COGNITIVE CONVERSATION</div>
               <p className="text-xs mt-1 leading-relaxed text-slate-400 font-mono uppercase">
-                To converse with the specialists live using Gemini, add your <code>GEMINI_API_KEY</code> under the <strong>Settings (Gear Icon) &gt; Secrets</strong> panel of your editor. The directory explorer, prompt copying, and team builder remain fully active!
+                To converse with the specialists live using Gemini, set <code>VITE_GEMINI_API_KEY</code> in your environment, or add a provider key under the <strong>Settings (Key Icon)</strong> panel. The directory explorer, prompt copying, and team builder remain fully active!
               </p>
             </div>
           </div>
