@@ -139,3 +139,36 @@ class MissionStatus(BaseModel):
     hitl_required: bool = False
     hitl_pending_phase: Optional[str] = None
     audit_intact: bool = True
+
+
+class SwarmRegisterRequest(BaseModel):
+    """Request body for POST /api/swarm/register (SYNERGY #17).
+
+    This route previously took raw query parameters, which meant no validation
+    and no schema in the generated OpenAPI document. `capabilities` is a real
+    list here rather than a comma-separated string.
+    """
+    agent_id: str = Field(min_length=1, description="Stable identifier for the mission worker.")
+    capabilities: list[str] = Field(
+        default_factory=list,
+        description="Capability tags the worker can serve, e.g. ['chat', 'browser'].",
+    )
+    x: float = Field(default=0.0, description="Generic 2D affinity coordinate, not a physical position.")
+    y: float = Field(default=0.0, description="Generic 2D affinity coordinate, not a physical position.")
+
+
+class SwarmRegisterResponse(BaseModel):
+    agent_id: str
+    status: str
+    capabilities: list[str] = Field(default_factory=list)
+
+
+class SwarmHeartbeatRequest(BaseModel):
+    """Request body for POST /api/swarm/heartbeat (SYNERGY #17)."""
+    agent_id: str = Field(min_length=1, description="Identifier of a previously registered worker.")
+    x: Optional[float] = Field(default=None, description="Optional updated affinity coordinate.")
+    y: Optional[float] = Field(default=None, description="Optional updated affinity coordinate.")
+
+
+class SwarmHeartbeatResponse(BaseModel):
+    ok: bool = Field(description="False when the agent_id was never registered.")
