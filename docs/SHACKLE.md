@@ -39,12 +39,14 @@ breaking specification change.
 | 2 | `state.circuit_tripped` is true | `DENY` | `circuit_open` |
 | 3 | nonce already in `state.seen_nonces` | `DENY` | `policy_violation:duplicate_nonce` |
 | 3b | duplicate nonce on a resume of an already-terminal transition | `DENY` | `policy_violation:duplicate_resume_no_effect` |
+| 3c | duplicate nonce matching the pending transition binding exactly | falls through to 4 | - |
 | 4 | `state.pending_transition.decision` is set | see §3 | `hitl_transition:*` |
+| 4b | pending transition set but not bound to this call | `DENY` | `policy_violation:hitl_binding_mismatch` |
 | 5 | remaining budget insufficient for this call | `DENY` | `budget_exhausted` |
 | 6 | repeat count for this tool exceeds `max_repeat_calls` | `DENY` | `max_repeat_exceeded` |
 | 7 | `config.hitl_mode == "always"` | `HITL` | `hitl_all_calls` |
 | 8 | `config.hitl_mode == "on_threshold"` and spend crosses the threshold | `HITL` | `budget_threshold` |
-| 9 | context is opaque / untestable | `HITL` | `fail_closed:opaque_context` |
+| 9 | context is opaque / untestable | `DENY` | `fail_closed:opaque_context` |
 | 10 | none of the above | `ALLOW` | `within_thresholds` |
 
 ### Why step 2 precedes step 5
@@ -54,19 +56,34 @@ ledger. Re-evaluating budget afterwards would overwrite a specific historical
 cause with a generic one. Circuit state is therefore checked before any
 resource check.
 
-### Why step 9 is HITL and not DENY
+### Why step 9 is DENY and not HITL
 
-An opaque context means the gate cannot *evaluate* the call, not that the call
-is known to be unsafe. Failing closed to `DENY` would make untestable contexts
-permanently unreachable and push operators toward disabling the gate. Failing
-closed to `HITL` keeps a human in the path while preserving a way forward. The
-call still cannot proceed unattended, which is the property that matters.
+An opaque context means the gate cannot *evaluate* the call. Earlier revisions
+of this specification failed closed to `HITL` on the reasoning that an
+unevaluable call is not a known-unsafe call, and that a human should decide.
 
-Note the interaction: **step 7 (`hitl_mode == "always"`) is reached before step
-9.** So with `hitl_mode="always"` and an opaque context, the surfaced reason is
-`hitl_all_calls`, not `fail_closed:opaque_context`. Both are `HITL`, so the
-outcome is identical; only the recorded reason differs. Implementations must not
-reorder these to "improve" the reason string.
+That reasoning does not survive contact with what the human is actually shown.
+A HITL prompt presents the operator with the call's arguments and asks them to
+approve it. When the context is opaque, those are precisely the arguments the
+gate could not read. The operator is therefore asked to underwrite a decision
+on evidence the system has already declared unreadable, and their approval
+carries an authority the underlying evidence does not support. Step 9 now
+returns `DENY`.
+
+The recovery path is to make the context evaluable and resubmit, not to ask a
+human to vouch for an unreadable one.
+
+Detection is structural. `has_opaque_context()` scans the whole parameter tree
+for an opacity marker (`ctx`, `context` or `__context__` set to `opaque`,
+`untestable`, `unknown` or `unverifiable`, compared case-insensitively) rather
+than testing `params["ctx"] == "opaque"` at the top level only. A nested or
+differently-spelled marker previously passed the gate entirely.
+
+Note the interaction: **step 7 (`hitl_mode == "always"`) is still reached
+before step 9.** With `hitl_mode="always"` and an opaque context, the surfaced
+verdict is `HITL` with reason `hitl_all_calls`. Since step 9 now denies, these
+two steps no longer produce the same verdict, so the ordering is
+outcome-bearing rather than cosmetic. Implementations must not reorder them.
 
 ## 3. HITL transition contract (step 4)
 
@@ -85,14 +102,46 @@ A bounded timeout applies outside `decide()`: `Governor.hitl_timeout()`
 resolves an unanswered prompt to `("DENY", "hitl_timeout")`. Absence of a human
 answer is never treated as approval.
 
-### Known limitation
+### Binding (normative)
 
-`decide()` does not currently validate that a pending transition's nonce,
-argument digest, and scope match the call being evaluated. An approval is
-therefore bound to the pending transition record, not cryptographically bound
-to a specific set of arguments. Until that binding exists, do not describe the
-HITL path as replay-proof at the argument level. This is tracked in
-[`ROADMAP.md`](ROADMAP.md).
+A pending transition is honoured **only** when it is bound to the call being
+evaluated. The record must carry all three binding fields and each must match:
+
+| Field | Must equal |
+|---|---|
+| `tool_name` | `call.tool_name` |
+| `nonce` | `call.nonce` |
+| `args_digest` | `canonical_hash(call.params)` |
+
+A record missing any binding field, or whose fields do not match, produces
+`DENY policy_violation:hitl_binding_mismatch`. A record carrying a decision
+string outside the table above produces `DENY
+policy_violation:hitl_unknown_decision`. Neither is treated as an approval.
+
+Consequences worth stating explicitly, because each was previously possible:
+
+- Approving a call to `payments.transfer` with `{"amount": 1}` does not
+  authorise the same tool with `{"amount": 1000000}`.
+- Approving a call to one tool does not authorise a different tool.
+- An approval authorises **one** call. `Governor.evaluate()` retires the
+  pending record as soon as `decide()` consumes a terminal decision, so the
+  next call is evaluated on its own merits. Previously a single approval stayed
+  live for the remainder of the mission and short-circuited every resource
+  check below step 4.
+
+`Governor.request_hitl(tool_name, reason, *, nonce=None, params=None)` captures
+the binding when the prompt is raised. `nonce` and `params` are
+keyword-optional, so a two-argument call binds to `nonce=None` and the digest
+of an empty parameter set.
+
+### Interaction with the replay check (step 3)
+
+The approved call carries the nonce it was approved under, and that nonce is
+already in `seen_nonces` from the evaluation that raised the prompt. A naive
+duplicate-nonce check would therefore deny the very call the operator just
+approved. Step 3 makes one narrow exception: a repeated nonce falls through to
+step 4 **only** when the call matches the pending binding exactly. Every other
+repeated nonce is still `DENY policy_violation:duplicate_nonce`.
 
 ## 4. Layers above `decide()`
 
@@ -147,16 +196,40 @@ access to the signing key.
 semantically identical parameter dicts therefore produce one digest regardless
 of key order.
 
-### Known limitations
+`canonical_hash()` is implemented in `onitsir/canonical.py` and re-exported
+from `onitsir/shackle.py`, so existing imports from either module resolve to
+the same function.
 
-- Non-canonical input is detected by a sentinel key rather than by attempting
-  canonicalization and catching failure. A caller who does not set the sentinel
-  can pass structurally odd input without triggering step 1.
-- `ensure_ascii=False` means non-ASCII parameter values hash as UTF-8. This is
-  correct and deliberate, but it is not covered by a published conformance
-  vector, so cross-implementation agreement on non-ASCII input is untested.
+### Validation (normative)
 
-Both are tracked in [`ROADMAP.md`](ROADMAP.md).
+`assert_canonicalizable(params)` walks the whole structure and raises
+`NonCanonicalInput` (a `ValueError` subclass) when the input has no single
+unambiguous JSON encoding. It refuses:
+
+| Input | Why |
+|---|---|
+| `NaN`, `+Infinity`, `-Infinity` | no JSON literal; `allow_nan=True` would emit non-standard tokens |
+| non-string mapping keys | `{1: "a"}` and `{"1": "a"}` would share one digest |
+| tuples | `(1, 2)` and `[1, 2]` would share one digest |
+| circular references | no terminating encoding |
+| nesting beyond 64 levels | bounded so canonicalization cannot be turned into stack exhaustion |
+| any other type | no defined encoding |
+
+Step 1 of `decide()` calls this. Detection therefore no longer depends on a
+caller volunteering `params["__noncanonical__"] = True`; that sentinel is still
+honoured as an explicit caller-side marker, so callers and published vectors
+written against the previous surface behave identically.
+
+### Remaining limitation
+
+`ensure_ascii=False` means non-ASCII parameter values hash as UTF-8. This is
+correct and deliberate, and it is pinned by
+`tests/test_canonicalization.py`, but it is not covered by a published
+conformance vector, so cross-implementation agreement on non-ASCII input
+remains untested by the vector suite. Canonicalization is byte-level, not
+Unicode-NFC: composed and decomposed spellings of the same grapheme produce
+different digests. An implementation that normalizes would disagree with this
+one.
 
 ## 7. Conformance
 

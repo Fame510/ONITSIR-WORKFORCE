@@ -8,6 +8,7 @@ over ALLOW).
 """
 import pytest
 
+from onitsir.canonical import canonical_hash
 from onitsir.shackle import (
     DenyReason,
     Governor,
@@ -59,19 +60,33 @@ def test_hitl_always_mode_returns_hitl_not_allow():
 
 
 def test_hitl_always_precedes_opaque_context_reason():
-    """Both are HITL, so the outcome is identical, but step 7 is reached before
-    step 9. The recorded reason must be hitl_all_calls. Locking this in stops a
-    future 'reason improvement' from silently reordering precedence."""
+    """Step 7 is reached before step 9, so the recorded reason must be
+    hitl_all_calls. Since step 9 now denies, the two steps no longer produce
+    the same verdict, which makes this precedence test load-bearing rather
+    than cosmetic: reordering them would turn a pausable HITL into a DENY."""
     gov = Governor(GovernorConfig(budget_usd=10.0, hitl_mode="always"))
     verdict, reason = gov.evaluate("tool.x", params={"ctx": "opaque"})
     assert verdict == "HITL"
     assert reason == "hitl_all_calls"
+    assert gov.circuit_tripped is False
 
 
-def test_opaque_context_alone_fails_closed_to_hitl():
+def test_opaque_context_alone_fails_closed_to_deny():
+    """Changed from HITL to DENY. A call whose context the gate cannot evaluate
+    is not a reviewable decision, so it is refused rather than shown to an
+    operator with unreadable arguments."""
     gov = Governor(GovernorConfig(budget_usd=10.0))
     verdict, reason = gov.evaluate("tool.x", params={"ctx": "opaque"})
-    assert verdict == "HITL"
+    assert verdict == "DENY"
+    assert reason == "fail_closed:opaque_context"
+    assert gov.circuit_tripped is True
+
+
+def test_nested_opaque_context_is_not_missed():
+    """The old top-level equality check let a nested marker through."""
+    gov = Governor(GovernorConfig(budget_usd=10.0))
+    verdict, reason = gov.evaluate("tool.x", params={"outer": {"ctx": "opaque"}})
+    assert verdict == "DENY"
     assert reason == "fail_closed:opaque_context"
 
 
@@ -91,6 +106,16 @@ def test_malformed_input_outranks_an_already_open_circuit():
     gov = Governor(GovernorConfig(budget_usd=10.0))
     gov.circuit_tripped = True
     verdict, reason = gov.evaluate("tool.x", params={"__noncanonical__": True})
+    assert verdict == "DENY"
+    assert reason == "policy_violation:malformed_input"
+
+
+def test_structurally_malformed_input_outranks_an_open_circuit_too():
+    """Same precedence, but with real un-hashable input rather than the
+    caller-volunteered sentinel."""
+    gov = Governor(GovernorConfig(budget_usd=10.0))
+    gov.circuit_tripped = True
+    verdict, reason = gov.evaluate("tool.x", params={"v": float("inf")})
     assert verdict == "DENY"
     assert reason == "policy_violation:malformed_input"
 
@@ -191,14 +216,97 @@ def test_hitl_timeout_is_recorded_in_the_ledger():
 
 def test_approved_hitl_transition_allows_and_short_circuits_budget():
     """An operator approval is authoritative and is checked at step 4, above
-    the budget check at step 5 — so an approved transition proceeds even with
-    the budget already gone."""
+    the budget check at step 5, so an approved transition proceeds even with
+    the budget already gone. Governor.request_hitl() captures the binding, so
+    the approval applies to this exact call."""
     gov = Governor(GovernorConfig(budget_usd=0.01))
     gov.request_hitl("tool.x", "hitl_all_calls")
     gov.resolve_hitl("approve")
     verdict, reason = gov.evaluate("tool.x", cost_usd=5.0)
     assert verdict == "ALLOW"
     assert reason == "hitl_transition:approve"
+
+
+def test_an_approval_does_not_survive_into_the_next_call():
+    """One approval, one call.
+
+    The budget short-circuit above is exactly why single use matters: before
+    this, a lingering approval bypassed every resource check for the rest of
+    the mission.
+    """
+    gov = Governor(GovernorConfig(budget_usd=0.01))
+    gov.request_hitl("tool.x", "hitl_all_calls")
+    gov.resolve_hitl("approve")
+
+    assert gov.evaluate("tool.x", cost_usd=5.0) == ("ALLOW", "hitl_transition:approve")
+    assert gov.pending_hitl() is None
+
+    verdict, reason = gov.evaluate("tool.x", cost_usd=5.0)
+    assert verdict == "DENY"
+    assert reason == "budget_exhausted"
+
+
+def test_an_approval_bound_to_one_argument_set_denies_a_different_one():
+    """The operator approved a transfer of 1. The caller then submits
+    1,000,000 against the same approval."""
+    gov = Governor(GovernorConfig(budget_usd=100.0))
+    gov.request_hitl("payments.transfer", "hitl_all_calls",
+                     nonce="n-1", params={"amount": 1})
+    gov.resolve_hitl("approve")
+    verdict, reason = gov.evaluate(
+        "payments.transfer", nonce="n-1", params={"amount": 1000000}
+    )
+    assert verdict == "DENY"
+    assert reason == "policy_violation:hitl_binding_mismatch"
+    assert gov.circuit_tripped is True
+
+
+def test_an_approval_bound_to_one_tool_denies_a_different_tool():
+    gov = Governor(GovernorConfig(budget_usd=100.0))
+    gov.request_hitl("docs.read", "hitl_all_calls")
+    gov.resolve_hitl("approve")
+    verdict, reason = gov.evaluate("payments.transfer")
+    assert verdict == "DENY"
+    assert reason == "policy_violation:hitl_binding_mismatch"
+
+
+def test_a_fully_bound_approval_survives_the_replay_check():
+    """The approved call carries the nonce it was approved under, and that
+    nonce is already in seen_nonces from the HITL evaluation. An unbound
+    duplicate check would therefore deny the very call the operator approved.
+    Step 3 makes a narrow exception for a call that matches the pending
+    binding exactly."""
+    gov = Governor(GovernorConfig(budget_usd=100.0, hitl_mode="always"))
+    params = {"amount": 1}
+
+    verdict, reason = gov.evaluate("payments.transfer", nonce="n-1", params=params)
+    assert verdict == "HITL"
+    assert "n-1" in gov.seen_nonces
+
+    gov.request_hitl("payments.transfer", reason, nonce="n-1", params=params)
+    gov.resolve_hitl("approve")
+
+    verdict, reason = gov.evaluate("payments.transfer", nonce="n-1", params=params)
+    assert verdict == "ALLOW"
+    assert reason == "hitl_transition:approve"
+
+
+def test_an_unbound_replay_is_still_denied_as_a_duplicate():
+    """That exception is narrow. Anything not matching the pending binding is
+    still a replay."""
+    gov = Governor(GovernorConfig(budget_usd=100.0))
+    assert gov.evaluate("tool.x", nonce="n-1")[0] == "ALLOW"
+    verdict, reason = gov.evaluate("tool.x", nonce="n-1")
+    assert verdict == "DENY"
+    assert reason == "policy_violation:duplicate_nonce"
+
+
+def test_request_hitl_digest_matches_canonical_hash():
+    """The binding digest is the published canonicalization, not a private
+    one, so a third party can recompute it from the audit record."""
+    gov = Governor(GovernorConfig(budget_usd=10.0))
+    pending = gov.request_hitl("tool.x", "r", nonce="n", params={"b": 2, "a": 1})
+    assert pending["args_digest"] == canonical_hash({"a": 1, "b": 2})
 
 
 def test_rejected_hitl_transition_denies():

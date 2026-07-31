@@ -1,14 +1,14 @@
-"""Mission routes — the core of the new governed surface.
+"""Mission routes â the core of the new governed surface.
 
-SYNERGY #2: GET /api/router/prefilter — deterministic Router shortlist for
+SYNERGY #2: GET /api/router/prefilter â deterministic Router shortlist for
   agentosirus's LLM "Lead Swarm Architect" planner.
-SYNERGY #8: POST /api/router/route — confidence-scored crew suggestion for
+SYNERGY #8: POST /api/router/route â confidence-scored crew suggestion for
   TeamBuilder's free-text "Suggest a team" box.
-SYNERGY #3: POST /api/mission/{id}/gate — wraps Governor.evaluate(); the
+SYNERGY #3: POST /api/mission/{id}/gate â wraps Governor.evaluate(); the
   single server-side source of ALLOW/DENY/HITL truth.
-SYNERGY #4: POST /api/mission/{id}/verify-step — Iron Law check for one
+SYNERGY #4: POST /api/mission/{id}/verify-step â Iron Law check for one
   agentosirus chain step via ChainStepEvidenceProducer.
-SYNERGY #7: POST /api/mission/{id}/evidence — evidence-wrap tool-integration
+SYNERGY #7: POST /api/mission/{id}/evidence â evidence-wrap tool-integration
   side effects (GitHub writes, Firecrawl scrapes) from integrations.ts.
 SYNERGY #24: mission state changes are recorded so WS /ws/mission/{id}
   (see main.py) can stream them live to agentosirus's activityBus/MindMap.
@@ -123,7 +123,7 @@ def get_mission(mission_id: str):
 def gate_mission_step(mission_id: str, body: GateRequest):
     """SYNERGY #3: agentosirus's onitsirClient.ts calls this before each
     handleChain() step. Server-side decide() is the ONLY governance
-    implementation — TypeScript never re-implements this logic (SYNERGY #6)."""
+    implementation â TypeScript never re-implements this logic (SYNERGY #6)."""
     m = _MISSIONS.get(mission_id)
     if m is None:
         raise HTTPException(status_code=404, detail="Mission not found.")
@@ -133,7 +133,12 @@ def gate_mission_step(mission_id: str, body: GateRequest):
         params=body.params, tags=body.tags,
     )
     if verdict == "HITL":
-        governor.request_hitl(body.tool_name, reason)
+        governor.request_hitl(
+            body.tool_name,
+            reason,
+            nonce=body.nonce,
+            params=body.params,
+        )
         m["hitl_required"] = True
         m["hitl_pending_phase"] = body.tool_name
         _emit(mission_id, "HITL_PROMPT", {"tool_name": body.tool_name, "reason": reason})
@@ -176,7 +181,7 @@ def verify_step(mission_id: str, body: VerifyStepRequest):
 @router.post("/api/mission/{mission_id}/evidence")
 def post_evidence(mission_id: str, body: EvidenceRequest):
     """SYNERGY #7: evidence-wrap tool-integration side effects (GitHub
-    writes, Firecrawl scrapes) — integrations.ts's asEvidence() wrapper
+    writes, Firecrawl scrapes) â integrations.ts's asEvidence() wrapper
     posts here; Workflow.complete_current() can consume the resulting
     Evidence directly."""
     m = _MISSIONS.get(mission_id)

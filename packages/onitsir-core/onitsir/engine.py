@@ -106,7 +106,13 @@ class Engine:
             if verdict == "HITL":
                 mission.hitl_required = True
                 mission.hitl_pending_phase = phase.value
-                governor.request_hitl(f"phase:{phase.value}", reason)
+                # The pending record is bound to this phase and to the empty
+                # argument set the phase gate was evaluated with, so an operator
+                # answer cannot be read as an answer about a different phase.
+                governor.request_hitl(
+                    f"phase:{phase.value}", reason,
+                    nonce=f"{mission.goal}:{phase.value}", params={},
+                )
                 decision = hitl_resolver(phase.value, reason) if hitl_resolver else "timeout"
                 if decision == "approve":
                     governor.resolve_hitl("approve")
@@ -116,6 +122,12 @@ class Engine:
                 else:
                     governor.resolve_hitl("reject")
                     verdict, reason = "DENY", "hitl_transition:reject"
+                # The engine consumes the operator's answer here rather than
+                # routing it back through decide(), so it must retire the
+                # record itself. Leaving it in place would carry a phase-scoped
+                # approval into the NEXT phase, where it no longer matches the
+                # binding and would be refused as a mismatch.
+                governor.clear_hitl()
 
             if verdict == "DENY":
                 mission.blocked_reason = f"{phase.value}: policy DENY — {reason}"
@@ -162,7 +174,10 @@ class Engine:
             if verdict == "HITL":
                 mission.hitl_required = True
                 mission.hitl_pending_phase = phase.value
-                governor.request_hitl(f"phase:{phase.value}", reason)
+                governor.request_hitl(
+                    f"phase:{phase.value}", reason,
+                    nonce=f"{mission.goal}:{phase.value}", params={},
+                )
                 if hitl_resolver is not None:
                     decision = await hitl_resolver(phase.value, reason)
                 else:
@@ -175,6 +190,10 @@ class Engine:
                 else:
                     governor.resolve_hitl("reject")
                     verdict, reason = "DENY", "hitl_transition:reject"
+                # See run(): the answer is consumed here, so the record is
+                # retired here. A phase-scoped approval must not survive into
+                # the next phase.
+                governor.clear_hitl()
 
             if verdict == "DENY":
                 mission.blocked_reason = f"{phase.value}: policy DENY — {reason}"

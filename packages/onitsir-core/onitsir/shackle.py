@@ -55,7 +55,15 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     _HAVE_NACL = False
 
+from .canonical import (
+    NonCanonicalInput,
+    assert_canonicalizable,
+    canonical_hash,
+    canonical_json,
+    has_opaque_context,
+)
 from .ethics import EthicsEngine
+from .hitl_transition import validate_hitl_transition
 from .shackle_rules import ShackleValidator
 
 Verdict = str  # "ALLOW" | "DENY" | "HITL"  (kept as str for backward-compat with ONITSIR callers)
@@ -120,17 +128,11 @@ def classify_reason(reason: str) -> DenyReason:
 # ──────────────────────────────────────────────────────────────────────────
 # Canonicalization + the policy decision surface (pure, stdlib-only)
 # ──────────────────────────────────────────────────────────────────────────
-def canonical_hash(params: Dict[str, Any]) -> str:
-    """SHA-256 over canonical JSON: keys sorted, tight separators, UTF-8.
-
-    NaN/Infinity and non-string keys are rejected (allow_nan=False), which
-    callers treat as malformed input.
-    """
-    serialized = json.dumps(
-        params, sort_keys=True, separators=(",", ":"),
-        ensure_ascii=False, allow_nan=False,
-    )
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+# `canonical_hash` now lives in `onitsir.canonical` and is re-exported here so
+# that every existing `from onitsir.shackle import canonical_hash` keeps working.
+# The move is what allows step 1 of `decide()` to detect non-canonicalizable
+# input by actually attempting canonicalization, instead of trusting a caller
+# to volunteer a `__noncanonical__` sentinel.
 
 
 def decide(
@@ -140,8 +142,10 @@ def decide(
 ) -> Tuple[Verdict, str]:
     """Return (verdict, reason) for a single action. Fail-closed by construction.
 
-    Precedence (highest first) — unchanged from ONITSIR, this is the pure
-    core the whole unified system depends on:
+    Precedence (highest first) - the pure core the whole unified system
+    depends on. The ORDER is unchanged from SP/1.0; two steps had their
+    detection hardened, and one had its verdict hardened:
+
       1. malformed / non-canonicalizable input        -> DENY
       2. circuit already open                          -> DENY
       3. duplicate nonce (replay)                      -> DENY
@@ -150,19 +154,53 @@ def decide(
       6. max repeat exceeded                           -> DENY
       7. HITL mode 'always'                            -> HITL
       8. HITL budget threshold                         -> HITL
-      9. opaque / untestable context                   -> HITL (fail-closed)
+      9. opaque / untestable context                   -> DENY (fail-closed)
      10. default                                       -> ALLOW
+
+    Hardening applied to this implementation:
+
+    * **Step 1 is now general.** It calls `assert_canonicalizable()`, which
+      walks the whole parameter tree and rejects NaN/Infinity, non-string
+      mapping keys, tuples, circular references, unsupported types and
+      excessive nesting. Previously it fired only when a caller volunteered
+      `params["__noncanonical__"] = True`; a caller who simply did not set the
+      sentinel could pass structurally un-hashable input straight through. The
+      sentinel is still honoured, as an explicit caller-side marker, so callers
+      and vectors written against the old surface keep working.
+    * **Step 4 is now bound.** `validate_hitl_transition()` requires the
+      pending transition's `tool_name`, `nonce` and `args_digest` to match the
+      call being evaluated. An operator approval authorises exactly one call
+      instead of every subsequent call. A record that cannot be bound is
+      refused as `policy_violation:hitl_binding_mismatch` rather than honoured.
+    * **Step 9 is now DENY, and detected structurally.** `has_opaque_context()`
+      finds an opacity marker anywhere in the parameter tree instead of only at
+      `params["ctx"]`. The verdict changed from HITL to DENY: a context the
+      gate cannot evaluate must not be routed to a human as if it were a
+      reviewable decision, because the human is shown a call whose arguments
+      the gate itself could not read. Note step 7 still precedes step 9, so
+      under `hitl_mode="always"` the surfaced reason remains `hitl_all_calls`.
     """
     params: Dict[str, Any] = call.get("params", {}) or {}
     pending = state.get("pending_transition")
 
     # 1. malformed / non-canonicalizable input
     if params.get("__noncanonical__") is True:
+        # Legacy explicit marker. Retained so callers and published vectors
+        # written against the pre-hardening surface behave identically.
+        return ("DENY", "policy_violation:malformed_input")
+    try:
+        assert_canonicalizable(params)
+    except NonCanonicalInput:
         return ("DENY", "policy_violation:malformed_input")
 
     # 2. circuit already open
     if state.get("circuit_tripped") is True:
         return ("DENY", "circuit_open")
+
+    # Computed before step 3 because step 3 needs to know whether a repeated
+    # nonce is a hostile replay or the legitimate resumption of the very call
+    # that is sitting in front of an operator.
+    transition = validate_hitl_transition(pending, call)
 
     # 3. duplicate nonce (replay)
     seen = state.get("seen_nonces") or []
@@ -174,19 +212,17 @@ def decide(
             and pending.get("terminal_status") in ("rejected", "superseded")
         ):
             return ("DENY", "policy_violation:duplicate_resume_no_effect")
-        return ("DENY", "policy_violation:duplicate_nonce")
+        if not transition.bound:
+            return ("DENY", "policy_violation:duplicate_nonce")
+        # Bound resumption: same tool, same nonce, same argument digest as the
+        # pending transition an operator has just answered. That is not a
+        # replay of a new call, it is the original call proceeding, and denying
+        # it here would make every approval unusable. Fall through to step 4.
 
-    # 4. HITL transition contract
-    if pending:
-        decision = pending.get("decision")
-        if decision == "approve":
-            return ("ALLOW", "hitl_transition:approve")
-        if decision == "reject":
-            return ("DENY", "hitl_transition:reject")
-        if decision == "modify":
-            return ("ALLOW", "hitl_transition:modify_successor")
-        if decision in ("defer", "escalate"):
-            return ("HITL", "hitl_transition:defer_escalate")
+    # 4. HITL transition contract, bound to tool_name + nonce + args digest
+    resolved = transition.as_tuple()
+    if resolved is not None:
+        return resolved
 
     # 5. budget exhausted
     budget = config.get("budget_usd", 0) or 0
@@ -216,8 +252,8 @@ def decide(
                 return ("HITL", "budget_threshold")
 
     # 9. opaque / untestable context
-    if params.get("ctx") == "opaque":
-        return ("HITL", "fail_closed:opaque_context")
+    if has_opaque_context(params):
+        return ("DENY", "fail_closed:opaque_context")
 
     # 10. default allow
     return ("ALLOW", "within_thresholds")
@@ -414,22 +450,77 @@ class Governor:
                 if tags and score < self.config.ethics_threshold:
                     verdict, reason = "DENY", f"ethics_below_threshold:{score}"
 
+        # An operator answer authorises ONE call. Once decide() has consumed a
+        # terminal transition (approve / reject / modify), the pending record is
+        # retired here so it cannot authorise the next call as well. Without
+        # this, a single approval stayed live for the rest of the mission -
+        # which is the behaviour the binding work exists to remove.
+        if reason in (
+            "hitl_transition:approve",
+            "hitl_transition:reject",
+            "hitl_transition:modify_successor",
+            "policy_violation:hitl_binding_mismatch",
+            "policy_violation:hitl_unknown_decision",
+        ):
+            self._pending_hitl = None
+
         if verdict == "DENY":
             self.circuit_tripped = True
 
         self.ledger.append(tool_name, verdict, reason)
         return verdict, reason
 
-    def request_hitl(self, tool_name: str, reason: str) -> None:
-        """Register a pending HITL transition awaiting an operator decision."""
-        self._pending_hitl = {"tool_name": tool_name, "reason": reason, "decision": None}
+    def request_hitl(
+        self,
+        tool_name: str,
+        reason: str,
+        *,
+        nonce: Optional[str] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Register a pending HITL transition awaiting an operator decision.
+
+        The record now carries the full binding set - `tool_name`, `nonce` and
+        the canonical `args_digest` of the call's parameters - so that when the
+        operator answers, `decide()` step 4 can verify the answer applies to
+        the call actually being evaluated. `nonce` and `params` are
+        keyword-optional, so existing two-argument call sites keep working and
+        simply bind to `nonce=None` and the digest of an empty parameter set.
+
+        Returns the pending record, which callers may surface to an operator.
+        """
+        try:
+            args_digest = canonical_hash(params or {})
+        except NonCanonicalInput:
+            # Non-canonicalizable arguments can never be bound, so no approval
+            # for them can ever be honoured. Record an impossible digest rather
+            # than a plausible one.
+            args_digest = ""
+        self._pending_hitl = {
+            "tool_name": tool_name,
+            "reason": reason,
+            "decision": None,
+            "nonce": nonce,
+            "args_digest": args_digest,
+            "requested_at": time.time(),
+        }
+        return dict(self._pending_hitl)
 
     def resolve_hitl(self, decision: str) -> None:
         """SYNERGY #10: operator resolves a pending HITL as approve/reject/modify.
+
         Called by `onitsir-server`'s `/api/mission/:id/hitl` route (mirroring
-        AgentOmega's HITL_RESPONSE WS message) or directly in tests."""
+        AgentOmega's HITL_RESPONSE WS message) or directly in tests. The
+        decision is recorded against the binding captured by `request_hitl()`;
+        it cannot widen that binding. An approval therefore authorises the one
+        call it was requested for and nothing else.
+        """
         if self._pending_hitl is not None:
             self._pending_hitl["decision"] = decision
+
+    def pending_hitl(self) -> Optional[Dict[str, Any]]:
+        """Read-only view of the pending transition, including its binding."""
+        return dict(self._pending_hitl) if self._pending_hitl is not None else None
 
     def hitl_timeout(self) -> Tuple[Verdict, str]:
         """SYNERGY #10: bounded-wait timeout resolution — ported from

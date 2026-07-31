@@ -4,15 +4,54 @@ import time
 
 import pytest
 
+from onitsir.canonical import NonCanonicalInput, canonical_hash as _canonical_hash
 from onitsir.shackle import (
     AuditLedger, DenyReason, Governor, GovernorConfig, HitlMode, VerdictEnum,
     canonical_hash, classify_reason, decide,
 )
 
 
+def _bound(tool_name="x", nonce=None, params=None, decision="approve"):
+    """Build a pending transition bound to a specific call.
+
+    Step 4 now requires tool_name + nonce + args_digest to match the call under
+    evaluation, so tests must construct the binding rather than passing a bare
+    {"decision": ...} record. A bare record is refused, and there is a test
+    below that pins exactly that.
+    """
+    return {
+        "tool_name": tool_name,
+        "nonce": nonce,
+        "args_digest": _canonical_hash(params or {}),
+        "decision": decision,
+    }
+
+
 # --- pure decide() precedence tests -----------------------------------------
 def test_decide_malformed_input_denies():
+    """The explicit legacy sentinel is still honoured."""
     verdict, reason = decide({}, {}, {"params": {"__noncanonical__": True}})
+    assert verdict == "DENY"
+    assert reason == "policy_violation:malformed_input"
+
+
+def test_decide_detects_malformed_input_without_the_sentinel():
+    """The sentinel is no longer required. Detection is a property of the input.
+
+    Before hardening, a caller who simply did not set __noncanonical__ could
+    pass structurally un-hashable input straight through step 1. NaN has no
+    canonical JSON form, so two implementations could never agree on its
+    digest; the gate must refuse it whether or not the caller says so.
+    """
+    verdict, reason = decide({}, {}, {"tool_name": "x", "params": {"v": float("nan")}})
+    assert verdict == "DENY"
+    assert reason == "policy_violation:malformed_input"
+
+
+def test_decide_denies_non_string_keys_without_the_sentinel():
+    """{1: "a"} and {"1": "a"} would otherwise collide on one digest, which
+    would make argument binding forgeable."""
+    verdict, reason = decide({}, {}, {"tool_name": "x", "params": {1: "a"}})
     assert verdict == "DENY"
     assert reason == "policy_violation:malformed_input"
 
@@ -31,15 +70,85 @@ def test_decide_duplicate_nonce_denies():
 
 
 def test_decide_hitl_transition_approve():
-    state = {"pending_transition": {"decision": "approve"}}
-    verdict, _ = decide({}, state, {"tool_name": "x", "params": {}})
+    state = {"pending_transition": _bound(decision="approve")}
+    verdict, reason = decide({}, state, {"tool_name": "x", "params": {}})
     assert verdict == "ALLOW"
+    assert reason == "hitl_transition:approve"
 
 
 def test_decide_hitl_transition_reject():
-    state = {"pending_transition": {"decision": "reject"}}
-    verdict, _ = decide({}, state, {"tool_name": "x", "params": {}})
+    state = {"pending_transition": _bound(decision="reject")}
+    verdict, reason = decide({}, state, {"tool_name": "x", "params": {}})
     assert verdict == "DENY"
+    assert reason == "hitl_transition:reject"
+
+
+def test_decide_hitl_transition_modify_allows_successor():
+    state = {"pending_transition": _bound(decision="modify")}
+    verdict, reason = decide({}, state, {"tool_name": "x", "params": {}})
+    assert verdict == "ALLOW"
+    assert reason == "hitl_transition:modify_successor"
+
+
+def test_decide_hitl_defer_and_escalate_stay_paused():
+    for decision in ("defer", "escalate"):
+        state = {"pending_transition": _bound(decision=decision)}
+        verdict, reason = decide({}, state, {"tool_name": "x", "params": {}})
+        assert verdict == "HITL"
+        assert reason == "hitl_transition:defer_escalate"
+
+
+# --- HITL binding (the gap docs/SHACKLE.md 3 called out) --------------------
+def test_an_unbound_approval_is_refused_not_honoured():
+    """A record carrying only {"decision": "approve"} is not evidence that a
+    human approved THIS call. It is refused rather than trusted."""
+    state = {"pending_transition": {"decision": "approve"}}
+    verdict, reason = decide({}, state, {"tool_name": "x", "params": {}})
+    assert verdict == "DENY"
+    assert reason == "policy_violation:hitl_binding_mismatch"
+
+
+def test_an_approval_for_one_tool_does_not_authorise_another():
+    state = {"pending_transition": _bound(tool_name="email.send")}
+    verdict, reason = decide({}, state, {"tool_name": "payments.transfer", "params": {}})
+    assert verdict == "DENY"
+    assert reason == "policy_violation:hitl_binding_mismatch"
+
+
+def test_an_approval_for_one_argument_set_does_not_authorise_another():
+    """The argument digest is what makes the approval specific. Approving a $1
+    transfer must not authorise a $1,000,000 one."""
+    approved = {"amount": 1}
+    state = {"pending_transition": _bound(tool_name="payments.transfer", params=approved)}
+    verdict, reason = decide(
+        {}, state, {"tool_name": "payments.transfer", "params": {"amount": 1000000}}
+    )
+    assert verdict == "DENY"
+    assert reason == "policy_violation:hitl_binding_mismatch"
+
+
+def test_an_approval_for_one_nonce_does_not_authorise_another():
+    state = {"pending_transition": _bound(nonce="n-1")}
+    verdict, reason = decide({}, state, {"tool_name": "x", "nonce": "n-2", "params": {}})
+    assert verdict == "DENY"
+    assert reason == "policy_violation:hitl_binding_mismatch"
+
+
+def test_a_fully_bound_approval_is_honoured():
+    params = {"amount": 1, "to": "acct-9"}
+    state = {"pending_transition": _bound(tool_name="payments.transfer", nonce="n-1", params=params)}
+    verdict, reason = decide(
+        {}, state, {"tool_name": "payments.transfer", "nonce": "n-1", "params": params}
+    )
+    assert verdict == "ALLOW"
+    assert reason == "hitl_transition:approve"
+
+
+def test_an_unrecognised_decision_is_not_an_approval():
+    state = {"pending_transition": _bound(decision="looks-fine-to-me")}
+    verdict, reason = decide({}, state, {"tool_name": "x", "params": {}})
+    assert verdict == "DENY"
+    assert reason == "policy_violation:hitl_unknown_decision"
 
 
 def test_decide_budget_exhausted_denies():
@@ -73,10 +182,40 @@ def test_decide_hitl_budget_threshold():
     assert reason == "budget_threshold"
 
 
-def test_decide_opaque_context_hitl():
+def test_decide_opaque_context_denies():
+    """Changed from HITL to DENY.
+
+    Routing an unevaluable call to a human presents them with arguments the
+    gate itself could not read, and asks them to approve it anyway. That is not
+    a reviewable decision, so the call is refused instead. Step 7 still
+    precedes step 9, so `hitl_mode="always"` still surfaces `hitl_all_calls`.
+    """
     verdict, reason = decide({}, {}, {"tool_name": "x", "params": {"ctx": "opaque"}})
-    assert verdict == "HITL"
+    assert verdict == "DENY"
     assert reason == "fail_closed:opaque_context"
+
+
+def test_opaque_context_is_detected_when_nested():
+    """Detection is structural, not a top-level equality check. A nested marker
+    used to slip past the gate entirely."""
+    params = {"payload": {"meta": {"context": "untestable"}}}
+    verdict, reason = decide({}, {}, {"tool_name": "x", "params": params})
+    assert verdict == "DENY"
+    assert reason == "fail_closed:opaque_context"
+
+
+def test_opaque_context_is_detected_inside_a_list():
+    params = {"steps": [{"ctx": "unverifiable"}]}
+    verdict, _ = decide({}, {}, {"tool_name": "x", "params": params})
+    assert verdict == "DENY"
+
+
+def test_a_normal_context_value_is_not_treated_as_opaque():
+    """The detector must not fire on ordinary context strings, or every real
+    call would be denied."""
+    verdict, reason = decide({}, {}, {"tool_name": "x", "params": {"ctx": "production"}})
+    assert verdict == "ALLOW"
+    assert reason == "within_thresholds"
 
 
 def test_decide_default_allow():
@@ -183,6 +322,40 @@ def test_governor_hitl_timeout_resolves_to_safe_deny():
     assert final_verdict == "DENY"
     assert final_reason == "hitl_timeout"
     assert gov.circuit_tripped is True
+
+
+def test_request_hitl_records_the_full_binding():
+    gov = Governor(GovernorConfig(budget_usd=10.0))
+    pending = gov.request_hitl("payments.transfer", "hitl_all_calls",
+                               nonce="n-1", params={"amount": 1})
+    assert pending["tool_name"] == "payments.transfer"
+    assert pending["nonce"] == "n-1"
+    assert pending["args_digest"] == canonical_hash({"amount": 1})
+    assert pending["decision"] is None
+
+
+def test_request_hitl_still_accepts_the_two_argument_call():
+    """Existing call sites pass only (tool_name, reason). They must keep
+    working, binding to nonce=None and the digest of an empty argument set."""
+    gov = Governor(GovernorConfig(budget_usd=10.0))
+    pending = gov.request_hitl("tool.x", "hitl_all_calls")
+    assert pending["nonce"] is None
+    assert pending["args_digest"] == canonical_hash({})
+
+
+def test_an_approval_is_consumed_by_the_call_it_authorised():
+    """One approval, one call. Before this, a single approval stayed live for
+    the remainder of the mission and authorised everything after it."""
+    gov = Governor(GovernorConfig(budget_usd=10.0))
+    gov.request_hitl("tool.x", "hitl_all_calls")
+    gov.resolve_hitl("approve")
+
+    first = gov.evaluate("tool.x")
+    assert first == ("ALLOW", "hitl_transition:approve")
+    assert gov.pending_hitl() is None
+
+    second = gov.evaluate("tool.x")
+    assert second == ("ALLOW", "within_thresholds")
 
 
 def test_governor_hitl_resolved_by_operator_approve():

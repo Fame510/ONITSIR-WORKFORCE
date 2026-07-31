@@ -2,12 +2,12 @@
   <img src="assets/logo.png" alt="ONITSIR" width="360" />
 </div>
 
-# ONITSIR-WORKFORCE — "On It, Sir."
+# ONITSIR-WORKFORCE â "On It, Sir."
 
 <div align="center">
 
 [![CI](https://github.com/Fame510/ONITSIR-WORKFORCE/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fame510/ONITSIR-WORKFORCE/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-272%20passing-brightgreen)](TEST_REPORT.md)
+[![Tests](https://img.shields.io/badge/tests-296%20passing-brightgreen)](TEST_REPORT.md)
 [![Conformance](https://img.shields.io/badge/SP%2F1.0-12%20vectors-blue)](docs/SHACKLE.md)
 [![Code license: AGPL v3](https://img.shields.io/badge/code-AGPL--3.0-blue)](LICENSE)
 [![Spec license: CC BY 4.0](https://img.shields.io/badge/spec-CC%20BY%204.0-lightgrey)](LICENSE-SPEC)
@@ -22,7 +22,7 @@ human interface), plus governance/robotics-inspired modules ported from
 **ADROS**, **AgentOmega**, **SINGULARITY**, **morphic-kernel**, and **Dux**.
 
 This supersedes both original repositories. ONITSIR is not subordinate to
-agentosirus, nor vice versa — they are laterally fused, the same way ONITSIR
+agentosirus, nor vice versa â they are laterally fused, the same way ONITSIR
 itself fuses Roster + Governor + Method + Machine into one engine. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design rationale
 and [`docs/SYNERGIES.md`](docs/SYNERGIES.md) for a standalone reference to
@@ -32,28 +32,28 @@ all 25 synergies implemented here.
 
 ## What this system is
 
-- **The Roster** — a unified specialist workforce: **164 specialist records
+- **The Roster** â a unified specialist workforce: **164 specialist records
   across 14 categories** in a single source of truth, resolving ONITSIR's JSON
   metadata and agentosirus's markdown persona bodies through one loader.
   Note that this release ships **one** full persona markdown body; the other
   163 entries are metadata records without a persona file. The CI roster smoke
   test prints the indexed persona count directly, so the gap is visible rather
   than implied. Tracked as [`docs/ROADMAP.md`](docs/ROADMAP.md) item 9.
-- **The Router** — deterministic goal→crew matching, used both as ONITSIR's
+- **The Router** â deterministic goalâcrew matching, used both as ONITSIR's
   own crew staffer and as a cheap pre-filter for agentosirus's LLM planner.
-- **The Governor (Shackle)** — a fail-closed policy surface (ALLOW/DENY/HITL)
+- **The Governor (Shackle)** â a fail-closed policy surface (ALLOW/DENY/HITL)
   with budget/loop/repeat circuit breakers, a declarative JSON-rule veto
   layer, additive ethics scoring, bounded-timeout human-in-the-loop, and a
   tamper-evident (optionally Ed25519-signed) hash-chained audit ledger. This
-  is the **single canonical implementation** — TypeScript never
+  is the **single canonical implementation** â TypeScript never
   re-implements it, only mirrors verdict types for display.
-- **The Iron Law (Verification Gate)** — "no completion claims without
-  fresh, passing evidence" — extended with pluggable evidence producers for
+- **The Iron Law (Verification Gate)** â "no completion claims without
+  fresh, passing evidence" â extended with pluggable evidence producers for
   chain steps, tool-integration side effects, and Dux-format research output.
-- **The Workflow** — an `intake → spec → plan → build → verify → ship` phase
+- **The Workflow** â an `intake â spec â plan â build â verify â ship` phase
   machine that drives every mission, even ones whose actual work happens in
   the TypeScript process.
-- **agentosirus-web** — the specialist prompt library, multi-provider LLM
+- **agentosirus-web** â the specialist prompt library, multi-provider LLM
   dispatch (14 providers), tool integrations (GitHub/Firecrawl/Playwright/
   KlingAI), and all UI (chat, team builder, live mind map, mission console,
   audit ledger view, HITL prompts).
@@ -119,7 +119,7 @@ See [`docs/SYNERGIES.md`](docs/SYNERGIES.md) for full descriptions. Summary:
 ```bash
 cd packages/onitsir-core
 pip install -e .
-python -m pytest tests/ -v          # 198 tests
+python -m pytest tests/ -v          # 222 tests
 
 cd ../onitsir-server
 pip install -e .
@@ -154,8 +154,8 @@ VITE_BACKEND_URL=http://localhost:8000 npm run dev
 Run the frontend test suite:
 
 ```bash
-npm run test             # vitest — 44 tests
-npx tsc --noEmit          # strict type-check — 0 errors
+npm run test             # vitest â 44 tests
+npx tsc --noEmit          # strict type-check â 0 errors
 node scripts/conformance-check.mjs   # SYNERGY #20 TS-side provider contract check
 ```
 
@@ -174,19 +174,22 @@ Playwright/KlingAI `companion` service (port 8787), an `nginx` reverse proxy
 ## Governance model
 
 Every governed action passes through the Shackle Governor's `decide()`
-function (`onitsir-core/onitsir/shackle.py`) — the single canonical
+function (`onitsir-core/onitsir/shackle.py`) â the single canonical
 implementation in the entire system:
 
 ```
 goal -> route -> [ Shackle: may this run? ] -> run -> [ Iron Law: did it pass? ] -> ship
 ```
 
-`decide()` checks, in strict precedence order: malformed input → circuit
-open → duplicate nonce (replay) → HITL transition contract → budget
-exhausted → max repeat exceeded → HITL-always mode → HITL budget threshold →
-opaque/untestable context → default ALLOW. On top of this, `Governor.evaluate()`
+`decide()` checks, in strict precedence order: malformed input â circuit
+open â duplicate nonce (replay) â HITL transition contract â budget
+exhausted â max repeat exceeded â HITL-always mode â HITL budget threshold â
+opaque/untestable context â default ALLOW. Steps 1, 4 and 9 are fail-closed:
+input that cannot be canonicalized is denied, an operator decision is honoured
+only for the exact call it was granted for, and a context the gate cannot read
+is denied rather than escalated. On top of this, `Governor.evaluate()`
 layers ADROS's declarative JSON-rule veto engine (SYNERGY #11) and additive
-ethics scoring (SYNERGY #12) — a hard veto always wins, exactly like ADROS's
+ethics scoring (SYNERGY #12) â a hard veto always wins, exactly like ADROS's
 `SafetyKernel`: "a positive score can never outvote a hard veto."
 
 Every ruling is recorded in a hash-chained, optionally Ed25519-signed
@@ -195,8 +198,8 @@ Every ruling is recorded in a hash-chained, optionally Ed25519-signed
 
 ## Test results
 
-**272 automated tests pass** across the whole system — 198 `onitsir-core` and
-30 `onitsir-server` pytest tests, plus 44 `agentosirus-web` vitest tests —
+**296 automated tests pass** across the whole system â 222 `onitsir-core` and
+30 `onitsir-server` pytest tests, plus 44 `agentosirus-web` vitest tests â
 alongside a clean TypeScript strict-mode compile and the 12-vector SP/1.0
 conformance suite. All of it runs in CI on every push across nine job
 instances, against Python 3.10, 3.11 and 3.12, and the merge gate requires all
@@ -207,7 +210,7 @@ Full breakdown, including what is deliberately **not** measured, in
 
 What is not measured, stated here so nothing is inferred from a test count:
 there is no coverage measurement and no coverage gate, no static security
-analysis in CI, and no property-based tests. 272 is a count, not a coverage
+analysis in CI, and no property-based tests. 296 is a count, not a coverage
 figure. See [`docs/ROADMAP.md`](docs/ROADMAP.md) items 6 to 8.
 
 ## Conformance
@@ -217,16 +220,16 @@ This repository implements **SP/1.0** (`SPEC_VERSION = "1.0.0"`,
 
 | Level | Vectors | Clauses |
 |---|---|---|
-| `L1_IRON_LAW` (mandatory) | 5 | IL-1 … IL-4 |
-| `L2_GOVERNANCE` | 4 | GV-1 … GV-4 |
+| `L1_IRON_LAW` (mandatory) | 5 | IL-1 â¦ IL-4 |
+| `L2_GOVERNANCE` | 4 | GV-1 â¦ GV-4 |
 | `L3_PROVIDER_CONTRACT` | 3 | PC-1 |
 
 For the shipped implementation the runner reports verdict `CONFORMANT` at
 `highest_level = "L3_PROVIDER_CONTRACT"`. Reproduce it with `onitsir conformance`.
 
-The full normative decision surface — all ten precedence steps, the HITL
+The full normative decision surface â all ten precedence steps, the HITL
 transition table, canonicalization rules and their limitations, and an explicit
-"what SHACKLE does not do" section — is specified in
+"what SHACKLE does not do" section â is specified in
 [`docs/SHACKLE.md`](docs/SHACKLE.md).
 
 Passing the vectors means an implementation reproduces those vectors. It is not
@@ -246,7 +249,7 @@ any time. That is **decision evidence**, and the conformance vectors test it.
 **What it does not do.** SHACKLE is a decision surface, not an enforcement
 boundary. It does not hold the protected capability and does not mediate the
 call, so a caller that ignores a `DENY` is not stopped by SHACKLE itself.
-Verdicts are not bound to specific arguments — there is no nonce-scoped,
+Verdicts are not bound to specific arguments â there is no nonce-scoped,
 single-use, argument-digest-bound authorization. The ledger is
 tamper-**evident**, not tamper-proof, and when signing is enabled the key lives
 in the same process as the ledger.
@@ -275,7 +278,7 @@ publicly on 2026-07-29:
 
 In the same comment the reviewer drew the distinction this project now uses
 throughout, noting that they would not yet call the executor demonstrably
-constrained, and separating decision evidence from enforced constraint — the
+constrained, and separating decision evidence from enforced constraint â the
 daemon holds the signing key but not the protected capability. That assessment
 is accurate and is why the section above exists and why
 [`docs/ROADMAP.md`](docs/ROADMAP.md) opens with enforcement.

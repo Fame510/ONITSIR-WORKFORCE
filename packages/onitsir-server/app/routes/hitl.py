@@ -16,7 +16,7 @@ def get_hitl_status(mission_id: str):
     if m is None:
         raise HTTPException(status_code=404, detail="Mission not found.")
     governor = m["governor"]
-    pending = governor._pending_hitl
+    pending = governor.pending_hitl()
     return {
         "mission_id": mission_id,
         "hitl_required": m["hitl_required"],

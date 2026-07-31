@@ -10,10 +10,10 @@ implying it.
 
 | Suite | Count | Command |
 |---|---|---|
-| `onitsir-core` (pytest) | 198 | `cd packages/onitsir-core && python -m pytest tests/ -v` |
+| `onitsir-core` (pytest) | 222 | `cd packages/onitsir-core && python -m pytest tests/ -v` |
 | `onitsir-server` (pytest) | 30 | `cd packages/onitsir-server && python -m pytest tests/ -v` |
 | `agentosirus-web` (vitest) | 44 | `cd packages/agentosirus-web && npm run test` |
-| **Total automated tests** | **272** | |
+| **Total automated tests** | **296** | |
 | TypeScript strict compile | 0 errors | `npx tsc --noEmit` |
 | SP/1.0 conformance vectors | 12 | `onitsir conformance` |
 | Governance type-drift check | pass | `node infra/scripts/sync-shackle-types.mjs --check` |
@@ -36,12 +36,12 @@ real roster, exercising eight subcommands. The `agentosirus-web` job runs, in
 order: dependency install from the lockfile, agent index build, vitest, strict
 type-check, provider-contract conformance check, and a production Vite build.
 
-## onitsir-core — 198 tests
+## onitsir-core â 222 tests
 
 | File | Tests | Covers |
 |---|---|---|
-| `test_shackle.py` | 28 | Governor behaviour, verdicts, ledger integration |
-| `test_governor_paths.py` | 22 | Every precedence branch of `decide()` |
+| `test_shackle.py` | 44 | Governor behaviour, verdicts, ledger integration, canonicalization rejection, bound HITL |
+| `test_governor_paths.py` | 30 | Every precedence branch of `decide()`, including binding and single-use |
 | `test_evidence_producers.py` | 18 | Evidence producer rejection paths |
 | `test_certificate.py` | 15 | Conformance certificate digest tamper detection |
 | `test_swarm_recovery.py` | 15 | Liveness boundaries, allocation determinism |
@@ -57,7 +57,7 @@ type-check, provider-contract conformance check, and a production Vite build.
 | `test_ethics.py` | 5 | Additive tag-weight scoring |
 | `test_workflow.py` | 5 | Phase transitions |
 
-## onitsir-server — 30 tests
+## onitsir-server â 30 tests
 
 | File | Tests | Covers |
 |---|---|---|
@@ -68,7 +68,7 @@ type-check, provider-contract conformance check, and a production Vite build.
 `test_api.py` asserts live counts rather than hardcoded ones: `/health` and the
 sum of `agentCount` across divisions must both equal the real roster size.
 
-## agentosirus-web — 44 tests
+## agentosirus-web â 44 tests
 
 | File | Tests | Covers |
 |---|---|---|
@@ -81,15 +81,15 @@ Test files must live under `src/**/__tests__/` and end in `.test.ts`; that glob
 is what `vitest.config.ts` includes. A test placed elsewhere silently never
 runs.
 
-## SP/1.0 conformance — 12 vectors
+## SP/1.0 conformance â 12 vectors
 
 `SPEC_VERSION = "1.0.0"`, `STANDARD_NAME = "ONITSIR"`, mandatory level
 `IRON_LAW`.
 
 | Level | Vectors | Clauses |
 |---|---|---|
-| `L1_IRON_LAW` | 5 | IL-1 … IL-4 |
-| `L2_GOVERNANCE` | 4 | GV-1 … GV-4 |
+| `L1_IRON_LAW` | 5 | IL-1 â¦ IL-4 |
+| `L2_GOVERNANCE` | 4 | GV-1 â¦ GV-4 |
 | `L3_PROVIDER_CONTRACT` | 3 | PC-1 |
 
 For the shipped implementation the runner reports verdict `CONFORMANT` at
@@ -117,7 +117,7 @@ the suites added for v1.0.0 target refusal paths:
 - A denied call still consumes budget. This is asserted with a vetoed call
   rather than an allowed one, because an allowed call does not demonstrate the
   claim.
-- Ledger tests mutate a committed chain — a field, an ordering, a length — and
+- Ledger tests mutate a committed chain â a field, an ordering, a length â and
   assert `verify()` returns `False`.
 - Certificate tests attempt to upgrade a `NON_CONFORMANT` report to
   `CONFORMANT`, to re-badge an implementation, and to inject a clause, and
@@ -134,7 +134,7 @@ mirror was extracted into a testable module.
 1. **The offline refusal-marker list carried three of the Python producer's
    seven markers.** In offline mode a Python traceback, an
    `Internal Server Error` body, or an `[error]` provider string could pass as
-   valid evidence — output the real Iron Law rejects.
+   valid evidence â output the real Iron Law rejects.
 2. **Offline task-relevance checking both over- and under-matched.** It used
    substring matching over only the first eight words of the task, so a task
    word occurring inside a longer unrelated word counted as a match while any
@@ -143,7 +143,7 @@ mirror was extracted into a testable module.
 
 The mirror is a deliberate, tested mirror rather than a second authority. If the
 Python producer's markers, minimum length, or tokenizer change, the mirror and
-its tests must change in the same commit — see
+its tests must change in the same commit â see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) rule 6.
 
 ## What is not measured
@@ -151,7 +151,7 @@ its tests must change in the same commit — see
 Stated plainly so no reader infers more than CI proves.
 
 - **No coverage measurement.** There is no `pytest-cov` run and no
-  minimum-coverage gate. 272 tests is a count, not a coverage figure. Tracked as
+  minimum-coverage gate. 296 tests is a count, not a coverage figure. Tracked as
   [`docs/ROADMAP.md`](docs/ROADMAP.md) item 6.
 - **No static security analysis in CI.** A manual audit confirms no `eval`,
   `exec`, `os.system`, `subprocess` or `pickle` anywhere in the Python source,
