@@ -5,7 +5,7 @@ both sides of the bridge with no translation layer beyond standard JSON.
 SYNERGY #6: `VerdictLiteral`/`DenyReasonLiteral`/`HitlModeLiteral` are the
 Pydantic-side source that `infra/scripts/sync-shackle-types.mjs` reads (via
 `.model_json_schema()`) to keep `agentosirus-web/src/lib/shackle.ts`'s
-TypeScript types in sync — TypeScript never re-implements decide() logic,
+TypeScript types in sync â TypeScript never re-implements decide() logic,
 only mirrors these value sets for display.
 """
 from __future__ import annotations
@@ -139,6 +139,79 @@ class MissionStatus(BaseModel):
     hitl_required: bool = False
     hitl_pending_phase: Optional[str] = None
     audit_intact: bool = True
+
+
+class AuthorizeRequest(BaseModel):
+    """Request body for POST /api/mission/{id}/authorize (SP/1.0-Custody).
+
+    Identical in shape to `GateRequest`. The difference is what comes back:
+    `/gate` returns a verdict the caller is trusted to honour, `/authorize`
+    returns a verdict *and*, for a protected tool that was allowed, the
+    single-use capability without which `/execute` refuses to run it.
+    """
+    tool_name: str
+    cost_usd: float = 0.0
+    nonce: Optional[str] = None
+    params: dict[str, Any] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    ttl_s: Optional[float] = Field(
+        default=None,
+        description="Capability lifetime override in seconds. Omit for the default.",
+    )
+
+
+class CapabilityModel(BaseModel):
+    """A minted capability as returned to the caller."""
+    token_id: str
+    mission_id: str
+    tool_name: str
+    nonce: Optional[str] = None
+    args_digest: str
+    expires_at: float
+    signature: str
+
+
+class AuthorizeResponse(BaseModel):
+    verdict: VerdictLiteral
+    reason: str
+    deny_reason: DenyReasonLiteral
+    protected: bool = Field(
+        description="Whether this tool requires a capability to execute at all."
+    )
+    capability: Optional[CapabilityModel] = Field(
+        default=None,
+        description="Present only for an ALLOW on a protected tool. Single use.",
+    )
+
+
+class ExecuteRequest(BaseModel):
+    """Request body for POST /api/mission/{id}/execute (SP/1.0-Custody)."""
+    tool_name: str
+    capability_token: Optional[str] = Field(
+        default=None,
+        description="token_id from a prior /authorize. Required for protected tools.",
+    )
+    nonce: Optional[str] = None
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecuteResponse(BaseModel):
+    ok: bool
+    tool_name: str
+    result: Any = None
+
+
+class CustodyRefusal(BaseModel):
+    """403 body when custody refuses an execution."""
+    ok: bool = False
+    tool_name: str
+    reason: str = Field(
+        description=(
+            "One of: missing, replayed, expired, mission_mismatch, tool_mismatch, "
+            "nonce_mismatch, args_mismatch, bad_signature."
+        )
+    )
+    detail: str
 
 
 class SwarmRegisterRequest(BaseModel):

@@ -15,6 +15,7 @@ for exact schema details.
 - [Router](#router)
 - [Missions](#missions)
 - [Governance gate](#governance-gate)
+- [Custody: authorize and execute](#custody-authorize-and-execute)
 - [Human-in-the-loop](#human-in-the-loop)
 - [Verification and evidence](#verification-and-evidence)
 - [Events](#events)
@@ -52,7 +53,7 @@ for exact schema details.
 ### `GET /api/divisions`
 
 Returns one object per roster category, sorted by category id. `agentCount` is
-computed live from `roster.category_counts()` and is never hardcoded — this is
+computed live from `roster.category_counts()` and is never hardcoded â this is
 the fix for historical specialist-count drift.
 
 ```json
@@ -172,6 +173,84 @@ calls this before each chain step and never re-implements the decision.
   that mission returns `DENY circuit_open` until the circuit is cleared.
 
 Full precedence order and reason semantics: [`SHACKLE.md`](SHACKLE.md).
+
+## Custody: authorize and execute
+
+`/gate` returns a verdict a caller may ignore. These two routes are the
+enforced path: a tool in `onitsir.custody.PROTECTED_TOOLS` cannot execute
+without a single-use, argument-bound capability, and the only thing that mints
+one is a decision that returned `ALLOW`.
+
+Normative rules: [`SHACKLE.md` section 8](SHACKLE.md).
+
+### `POST /api/mission/{mission_id}/authorize`
+
+Same request shape as `/gate`, plus an optional `ttl_s`.
+
+```json
+{ "tool_name": "email.send", "cost_usd": 0.02, "nonce": "step-7",
+  "params": { "to": "ops@example.com" }, "tags": [], "ttl_s": 60 }
+```
+
+```json
+{ "verdict": "ALLOW", "reason": "within_thresholds",
+  "deny_reason": "unspecified", "protected": true,
+  "capability": {
+    "token_id": "3rJ...", "mission_id": "d29e...",
+    "tool_name": "email.send", "nonce": "step-7",
+    "args_digest": "9f2c...", "expires_at": 1785479938.0,
+    "signature": "a41b..." } }
+```
+
+- `capability` is present **only** for an `ALLOW` on a protected tool. A
+  `DENY`, a `HITL`, or an unprotected tool all return `null`.
+- `protected` says whether `/execute` will demand a capability for this tool.
+- The capability is bound to `mission_id`, `tool_name`, `nonce` and the
+  canonical hash of `params`. Changing any of them at execution time is a
+  `403`.
+- Cost accounting and circuit-breaker behaviour are identical to `/gate`,
+  because `/authorize` calls the same `Governor.evaluate()`.
+
+### `POST /api/mission/{mission_id}/execute`
+
+```json
+{ "tool_name": "email.send", "capability_token": "3rJ...",
+  "nonce": "step-7", "params": { "to": "ops@example.com" } }
+```
+
+```json
+{ "ok": true, "tool_name": "email.send", "result": { } }
+```
+
+A refusal is `403` with a structured `detail`:
+
+```json
+{ "detail": { "ok": false, "tool_name": "email.send",
+              "reason": "args_mismatch",
+              "detail": "presented arguments do not match the arguments authorized" } }
+```
+
+`reason` is one of `missing`, `replayed`, `expired`, `mission_mismatch`,
+`tool_mismatch`, `nonce_mismatch`, `args_mismatch`, `bad_signature`.
+
+- The token is consumed on first presentation, correct or not. A misaimed
+  token is burned rather than left available for a second attempt.
+- A tool with no registered implementation is `404`, checked **after**
+  redemption, so a refused call cannot have run.
+
+### `GET /api/mission/{mission_id}/custody`
+
+```json
+{ "mission_id": "d29e...",
+  "entries": [ { "index": 0, "event": "capability_minted", "tool_name": "email.send",
+                 "token_id": "3rJ...", "detail": "9f2c...", "prev_hash": "000...",
+                 "entry_hash": "7ab..." } ],
+  "intact": true, "live_capabilities": 0 }
+```
+
+`event` is `capability_minted`, `capability_spent` or `capability_refused`.
+This chain is separate from `/api/audit/{id}`: that one records what was
+decided, this one records whether anything executed without a decision.
 
 ## Human-in-the-loop
 
@@ -348,5 +427,12 @@ Stated here rather than discovered in production:
    therefore empty for nearly every specialist.
 7. **The `startup` hook uses the deprecated `@app.on_event` decorator**, which
    FastAPI will eventually remove in favor of the lifespan context manager.
+8. **Custody is per-process and covers a fixed tool set.** The capability
+   holder and the custody ledger live in the same process as the mission
+   registry, so the enforcement guarantee does not survive a restart and is
+   not shared across replicas. A tool outside
+   `onitsir.custody.PROTECTED_TOOLS` executes without a capability by design.
+9. **The default protected-tool implementations are inert.** They echo their
+   arguments and perform no side effect. A deployment registers real ones.
 
-Items 1-5 and 7 are tracked in [`ROADMAP.md`](ROADMAP.md).
+Items 1-5 and 7-8 are tracked in [`ROADMAP.md`](ROADMAP.md).

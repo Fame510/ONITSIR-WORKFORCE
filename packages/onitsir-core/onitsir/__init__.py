@@ -1,10 +1,10 @@
-"""ONITSIR (unified) — "On It, Sir." The governed execution core of the
+"""ONITSIR (unified) â "On It, Sir." The governed execution core of the
 unified ONITSIR + agentosirus product.
 
 Per the unified architecture design (see docs/ARCHITECTURE.md), this Python
 package is the governed "brain": it owns the Roster, the Router, the
 Governor (Shackle), the Iron Law verification gate, and the phase Workflow
-machine — plus the new governance/robotics-inspired modules ported from
+machine â plus the new governance/robotics-inspired modules ported from
 ADROS, AgentOmega, SINGULARITY, morphic-kernel and Dux across all 25
 synergies (see docs/SYNERGIES.md).
 
@@ -21,6 +21,10 @@ synergies (see docs/SYNERGIES.md).
 - **The Engine** (`engine.py`): now async-capable, HITL-bounded (#10, #21).
 - **Swarm** (`swarm/coordinator.py`): multi-mission scheduling (#17).
 - **Conformance** (`conformance/`): certificate-issuing test harness (#20).
+- **Custody** (`custody/`): SP/1.0-Custody. The enforcement point the
+  decision surface previously lacked - a protected tool is unreachable
+  without a single-use, argument-bound capability, and only a decision that
+  returned `ALLOW` can mint one.
 """
 from .roster import Roster, Specialist
 from .router import Router, Assignment
@@ -34,6 +38,10 @@ from .ethics import EthicsEngine, TAG_WEIGHTS
 from .shackle_rules import ShackleValidator
 from .cost_model import ACTION_COST_USD, estimate_cost
 from .engine import Engine, Mission
+from .custody import (
+    Capability, CapabilityHolder, CapabilityInvalid, CapabilityRequired,
+    CustodyDaemon, CustodyLedger, ProtectedExecutor, PROTECTED_TOOLS, is_protected,
+)
 
 __version__ = "1.0.0"
 __all__ = [
@@ -47,4 +55,7 @@ __all__ = [
     "ShackleValidator",
     "ACTION_COST_USD", "estimate_cost",
     "Engine", "Mission",
+    "Capability", "CapabilityHolder", "CapabilityInvalid", "CapabilityRequired",
+    "CustodyDaemon", "CustodyLedger", "ProtectedExecutor", "PROTECTED_TOOLS",
+    "is_protected",
 ]

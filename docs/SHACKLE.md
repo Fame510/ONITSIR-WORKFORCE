@@ -251,21 +251,94 @@ that ran them. **It is not an audit, an accreditation, or a security review,
 and this project does not describe it as certification of anything beyond
 vector conformance.**
 
-## 8. What SHACKLE does not do
+## 8. Custody (SP/1.0-Custody)
+
+`decide()` is the decision surface. It does not, by itself, stop a caller that
+ignores it. `onitsir.custody` is the enforcement point that does, and this
+section is normative for it.
+
+### The rule
+
+A tool in `onitsir.custody.PROTECTED_TOOLS` MUST NOT execute unless a
+capability minted for that exact call is redeemed first. The only thing that
+may mint a capability is a decision layer that returned `ALLOW`.
+
+### Capability binding (normative)
+
+| Field | Must equal |
+|---|---|
+| `mission_id` | the mission the call is being made in |
+| `tool_name` | the tool being executed |
+| `nonce` | the nonce the decision was made for |
+| `args_digest` | `canonical_hash(params)` of the arguments approved |
+| `expires_at` | a wall-clock instant in the future |
+
+All five fields, plus `token_id`, are covered by an HMAC-SHA256 signature over
+a deterministic sorted `key=value` encoding joined by `\x1f`. Editing any
+field invalidates the signature.
+
+### Refusal reasons (normative)
+
+| Reason | Condition |
+|---|---|
+| `missing` | a protected tool was called with no capability |
+| `replayed` | the token is unknown or has already been spent |
+| `expired` | `expires_at` is in the past |
+| `mission_mismatch` | the capability was minted for another mission |
+| `tool_mismatch` | the capability was minted for another tool |
+| `nonce_mismatch` | the capability was minted for another nonce |
+| `args_mismatch` | the presented arguments do not hash to `args_digest` |
+| `bad_signature` | the signature does not verify under the custody key |
+
+Over HTTP, every one of these is `403` from
+`POST /api/mission/{id}/execute`.
+
+### Single use
+
+The token is removed from the live set **before** any binding check. A token
+presented against the wrong call is therefore burned rather than left
+available for a second, better-aimed attempt. This is strictly stronger than
+the precedence-step-3 nonce check, which detects a duplicate; here the token
+no longer exists.
+
+### Custody ledger
+
+Every mint, spend and refusal is appended to a hash-chained custody ledger,
+separate from the governance `AuditLedger`. The governance ledger answers
+"what was decided". The custody ledger answers "did anything execute without
+passing through the gate". Readable at `GET /api/mission/{id}/custody`.
+
+### Revocation
+
+A verdict that trips the circuit revokes every outstanding capability for that
+mission. A capability minted under an assumption that no longer holds must not
+remain redeemable.
+
+## 9. What SHACKLE does not do
 
 Stated explicitly, because the gap between "governed decision" and "enforced
 constraint" is where governance claims usually overreach:
 
-- It does not hold the protected capability. The caller still executes the tool
-  after receiving `ALLOW`. The gate decides; it does not mediate.
-- It does not issue scoped, single-use authorizations that the capability holder
-  could verify independently.
-- It does not prevent a caller from ignoring a `DENY` and calling the tool
-  directly.
-- It does not provide production security hardening, sandbox escape resistance,
-  or custody guarantees.
+- Custody covers the tools in `PROTECTED_TOOLS`. A tool outside that set
+  executes without a capability by design, so the contents of that set are
+  part of the security posture.
+- The capability holder, the mission registry and both ledgers are
+  per-process and in-memory. The guarantee does not survive a restart and is
+  not shared across workers. See [`ROADMAP.md`](ROADMAP.md) item 5.
+- There is **no conformance vector for custody**. The 12 published vectors
+  cover the decision surface. The bypass-resistance claim rests on this
+  repository's own tests, and no third party has verified it.
+- It does not authenticate the caller. `onitsir-server` still has no
+  authentication, authorization or rate limiting, so custody constrains what
+  a caller may execute, not who may call. See [`ROADMAP.md`](ROADMAP.md)
+  item 4.
+- Both ledgers are tamper-**evident**, not tamper-proof. When signing is
+  enabled the key lives in the same process as the ledger it signs.
+- It does not provide sandbox escape resistance or production security
+  hardening.
 
 What it does provide is a deterministic, reproducible, hash-chained record of
-what was decided and why, verifiable by a third party from published vectors.
-That is decision evidence. It is not enforced custody. Both properties are
-worth having; conflating them is not.
+what was decided and why, verifiable by a third party from published vectors,
+**and** an in-process enforcement boundary that a protected call cannot reach
+around. The first is decision evidence and is independently checkable. The
+second is enforced custody and, so far, is not.

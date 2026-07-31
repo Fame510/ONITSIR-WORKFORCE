@@ -10,10 +10,10 @@ implying it.
 
 | Suite | Count | Command |
 |---|---|---|
-| `onitsir-core` (pytest) | 222 | `cd packages/onitsir-core && python -m pytest tests/ -v` |
-| `onitsir-server` (pytest) | 30 | `cd packages/onitsir-server && python -m pytest tests/ -v` |
+| `onitsir-core` (pytest) | 258 | `cd packages/onitsir-core && python -m pytest tests/ -v` |
+| `onitsir-server` (pytest) | 45 | `cd packages/onitsir-server && python -m pytest tests/ -v` |
 | `agentosirus-web` (vitest) | 44 | `cd packages/agentosirus-web && npm run test` |
-| **Total automated tests** | **296** | |
+| **Total automated tests** | **347** | |
 | TypeScript strict compile | 0 errors | `npx tsc --noEmit` |
 | SP/1.0 conformance vectors | 12 | `onitsir conformance` |
 | Governance type-drift check | pass | `node infra/scripts/sync-shackle-types.mjs --check` |
@@ -36,10 +36,11 @@ real roster, exercising eight subcommands. The `agentosirus-web` job runs, in
 order: dependency install from the lockfile, agent index build, vitest, strict
 type-check, provider-contract conformance check, and a production Vite build.
 
-## onitsir-core â 222 tests
+## onitsir-core â 258 tests
 
 | File | Tests | Covers |
 |---|---|---|
+| `test_custody.py` | 36 | Capability minting, single use, argument binding, bypass refusal, custody ledger |
 | `test_shackle.py` | 44 | Governor behaviour, verdicts, ledger integration, canonicalization rejection, bound HITL |
 | `test_governor_paths.py` | 30 | Every precedence branch of `decide()`, including binding and single-use |
 | `test_evidence_producers.py` | 18 | Evidence producer rejection paths |
@@ -57,10 +58,11 @@ type-check, provider-contract conformance check, and a production Vite build.
 | `test_ethics.py` | 5 | Additive tag-weight scoring |
 | `test_workflow.py` | 5 | Phase transitions |
 
-## onitsir-server â 30 tests
+## onitsir-server â 45 tests
 
 | File | Tests | Covers |
 |---|---|---|
+| `test_custody_routes.py` | 15 | /authorize, /execute, the 403 bypass boundary, custody log |
 | `test_swarm_routes.py` | 15 | Swarm register and heartbeat body validation, liveness counts, state isolation between clients |
 | `test_api.py` | 10 | Full mission lifecycle, gate, verify-step, audit, HITL, evidence, swarm, events, 404 |
 | `test_transport.py` | 5 | Loopback and HTTP bridge transports |
@@ -151,7 +153,7 @@ its tests must change in the same commit â see
 Stated plainly so no reader infers more than CI proves.
 
 - **No coverage measurement.** There is no `pytest-cov` run and no
-  minimum-coverage gate. 296 tests is a count, not a coverage figure. Tracked as
+  minimum-coverage gate. 347 tests is a count, not a coverage figure. Tracked as
   [`docs/ROADMAP.md`](docs/ROADMAP.md) item 6.
 - **No static security analysis in CI.** A manual audit confirms no `eval`,
   `exec`, `os.system`, `subprocess` or `pickle` anywhere in the Python source,
@@ -161,11 +163,13 @@ Stated plainly so no reader infers more than CI proves.
   properties stated as invariants in [`docs/SHACKLE.md`](docs/SHACKLE.md).
   Tracked as item 8.
 - **No load or soak testing.** No concurrency or throughput claim is made.
-- **No test of enforced constraint, because there is none to test.** The suites
-  demonstrate that decisions are deterministic, reproducible and recorded. They
-  do not demonstrate that a caller which ignores a `DENY` is prevented from
-  acting, because SHACKLE does not hold the protected capability. Tracked as
-  item 1.
+- **Enforced constraint is now tested, within a stated scope.**
+  `test_custody.py` and `test_custody_routes.py` demonstrate that a caller
+  which ignores a `DENY`, replays a capability, edits the arguments after
+  approval, or points a capability at a different tool or mission is refused
+  before the tool implementation is reached. The scope is the tools in
+  `onitsir.custody.PROTECTED_TOOLS`, in-process, for one server process. No
+  conformance vector covers custody yet, and no third party has verified it.
 - **`infra/Dockerfile.onitsir-server` is not built by CI.** Its context bug was
   found by inspection, not by a failing job.
 

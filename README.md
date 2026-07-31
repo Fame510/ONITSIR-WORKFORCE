@@ -7,7 +7,7 @@
 <div align="center">
 
 [![CI](https://github.com/Fame510/ONITSIR-WORKFORCE/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fame510/ONITSIR-WORKFORCE/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-296%20passing-brightgreen)](TEST_REPORT.md)
+[![Tests](https://img.shields.io/badge/tests-347%20passing-brightgreen)](TEST_REPORT.md)
 [![Conformance](https://img.shields.io/badge/SP%2F1.0-12%20vectors-blue)](docs/SHACKLE.md)
 [![Code license: AGPL v3](https://img.shields.io/badge/code-AGPL--3.0-blue)](LICENSE)
 [![Spec license: CC BY 4.0](https://img.shields.io/badge/spec-CC%20BY%204.0-lightgrey)](LICENSE-SPEC)
@@ -119,7 +119,7 @@ See [`docs/SYNERGIES.md`](docs/SYNERGIES.md) for full descriptions. Summary:
 ```bash
 cd packages/onitsir-core
 pip install -e .
-python -m pytest tests/ -v          # 222 tests
+python -m pytest tests/ -v          # 258 tests
 
 cd ../onitsir-server
 pip install -e .
@@ -198,8 +198,8 @@ Every ruling is recorded in a hash-chained, optionally Ed25519-signed
 
 ## Test results
 
-**296 automated tests pass** across the whole system â 222 `onitsir-core` and
-30 `onitsir-server` pytest tests, plus 44 `agentosirus-web` vitest tests â
+**347 automated tests pass** across the whole system â 258 `onitsir-core` and
+45 `onitsir-server` pytest tests, plus 44 `agentosirus-web` vitest tests â
 alongside a clean TypeScript strict-mode compile and the 12-vector SP/1.0
 conformance suite. All of it runs in CI on every push across nine job
 instances, against Python 3.10, 3.11 and 3.12, and the merge gate requires all
@@ -210,7 +210,7 @@ Full breakdown, including what is deliberately **not** measured, in
 
 What is not measured, stated here so nothing is inferred from a test count:
 there is no coverage measurement and no coverage gate, no static security
-analysis in CI, and no property-based tests. 296 is a count, not a coverage
+analysis in CI, and no property-based tests. 347 is a count, not a coverage
 figure. See [`docs/ROADMAP.md`](docs/ROADMAP.md) items 6 to 8.
 
 ## Conformance
@@ -236,26 +236,44 @@ Passing the vectors means an implementation reproduces those vectors. It is not
 a security certification and not an endorsement. See
 [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md).
 
-## What SHACKLE does and does not claim
+## What SHACKLE enforces today
 
 Read this before citing the governance surface anywhere.
 
-**What it does.** Given an input, the decision is deterministic and
-reproducible. Arguments are bound into the canonical hash of the recorded
-entry. Deny reasons carry defined semantics. Every ruling is appended to a
-hash-chained, optionally Ed25519-signed ledger whose integrity is checkable at
-any time. That is **decision evidence**, and the conformance vectors test it.
+SHACKLE is enforced at three tiers. Each row states what the tier refuses,
+where the refusal is implemented, and which tests demonstrate it.
 
-**What it does not do.** SHACKLE is a decision surface, not an enforcement
-boundary. It does not hold the protected capability and does not mediate the
-call, so a caller that ignores a `DENY` is not stopped by SHACKLE itself.
-Verdicts are not bound to specific arguments â there is no nonce-scoped,
-single-use, argument-digest-bound authorization. The ledger is
-tamper-**evident**, not tamper-proof, and when signing is enabled the key lives
-in the same process as the ledger.
+| Tier | What it enforces | Where | Status |
+|---|---|---|---|
+| **Engine enforcement** | `decide()` refuses non-canonicalizable input, an open circuit, a replayed nonce, an unbound operator approval, an exhausted budget, a repeat ceiling and an opaque context, in a frozen precedence order. An approval is bound to one `tool_name` + `nonce` + argument digest and is single-use. | `onitsir/shackle.py`, `onitsir/canonical.py`, `onitsir/hitl_transition.py` | **Implemented** |
+| **API gate enforcement** | Every governed route runs the same server-side `decide()`. TypeScript never re-implements the decision; a type-drift check fails the build if the published value sets diverge. | `onitsir-server/app/routes/`, `infra/scripts/sync-shackle-types.mjs` | **Implemented** |
+| **Custody enforcement** | A protected tool is unreachable without a single-use, argument-bound capability, and the only thing that can mint one is a decision that returned `ALLOW`. A caller that ignores a `DENY` has nothing to present and receives `403`. | `onitsir/custody/`, `onitsir-server/app/routes/custody.py` | **Implemented** |
 
-The project therefore does not describe the executor as demonstrably
-constrained. Closing that gap is [`docs/ROADMAP.md`](docs/ROADMAP.md) item 1.
+**What that means concretely.** Before custody, the defensible claim was
+*decision evidence*: given an input, the decision is deterministic,
+reproducible, and recorded in a hash-chained, optionally Ed25519-signed
+ledger. That claim still holds and the conformance vectors still test it.
+What is new is that ignoring the decision no longer works: the protected
+operation is not reachable without a capability, the capability is bound to
+the exact arguments approved, and it is spent the first time it is redeemed.
+`POST /api/mission/{id}/execute` refuses a caller that skipped
+`POST /api/mission/{id}/authorize`, and the refusal is recorded in a separate
+hash-chained custody ledger readable at `GET /api/mission/{id}/custody`.
+
+**What it still does not do.** Custody mediates the tools listed in
+`onitsir.custody.PROTECTED_TOOLS`; a tool outside that set runs without a
+capability by design, so the set is part of the security posture and should be
+reviewed as such. The default tool implementations shipped in the server are
+inert. The capability holder, the mission registry and both ledgers are
+per-process and in-memory, so the guarantee is per-process and does not
+survive a restart ([`docs/ROADMAP.md`](docs/ROADMAP.md) item 5). Both ledgers
+are tamper-**evident**, not tamper-proof, and when signing is enabled the key
+lives in the same process as the ledger. The server still has no
+authentication, authorization or rate limiting (item 4), so custody constrains
+*what an authenticated-by-nothing caller may execute*, not *who may call*.
+
+**No part of this repository has been independently verified.** See
+[`docs/GOVERNANCE.md`](docs/GOVERNANCE.md) and the scope note below.
 
 ## Independent verification
 

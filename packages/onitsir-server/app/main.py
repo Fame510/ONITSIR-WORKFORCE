@@ -21,10 +21,40 @@ from typing import AsyncIterator
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from onitsir.custody import CapabilityHolder, CustodyDaemon, ProtectedExecutor
 from onitsir.roster import Roster
 from onitsir.swarm import SwarmCoordinator
 
-from .routes import agents, audit, divisions, hitl, mission, swarm
+from .routes import agents, audit, custody, divisions, hitl, mission, swarm
+from .routes.mission import _MISSIONS
+
+
+def _register_default_tools(executor: ProtectedExecutor) -> None:
+    """Register echo implementations for the protected tool surface.
+
+    A deployment replaces these with real implementations. They exist here so
+    that the custody boundary is exercisable end-to-end out of the box: the
+    interesting assertion is that a protected tool cannot be reached without a
+    capability, and that assertion needs a tool on the far side of the
+    boundary to be meaningful.
+
+    Deliberately inert. None of them performs the side effect its name
+    describes; shipping a default that actually sent email or actually pushed
+    to a repository would be a worse failure than shipping none.
+    """
+    from onitsir.custody import PROTECTED_TOOLS
+
+    for tool_name in sorted(PROTECTED_TOOLS):
+        executor.register(
+            tool_name,
+            lambda params, _tool=tool_name: {
+                "tool": _tool,
+                "executed": True,
+                "params": params,
+                "note": "inert default implementation",
+            },
+        )
+    executor.register("docs.read", lambda params: {"tool": "docs.read", "params": params})
 
 
 @asynccontextmanager
@@ -42,6 +72,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     app.state.roster = Roster.load()
     app.state.swarm_coordinator = SwarmCoordinator()
+
+    # SP/1.0-Custody. The holder owns the signing key and the live capability
+    # set; the daemon is the only thing that may mint; the executor is the only
+    # path to a protected tool. All three are per-process, matching the
+    # in-memory mission registry (docs/ROADMAP.md item 5).
+    holder = CapabilityHolder()
+    app.state.capability_holder = holder
+    app.state.custody_daemon = CustodyDaemon(holder)
+    executor = ProtectedExecutor(holder)
+    _register_default_tools(executor)
+    app.state.protected_executor = executor
+
+    # `mission.py` owns the registry as a module-level dict. Exposing the same
+    # object on app.state gives route code one documented way to reach it
+    # without importing a private name; it is the same dict, not a copy.
+    app.state.missions = _MISSIONS
     yield
 
 
@@ -63,6 +109,7 @@ app.add_middleware(
 app.include_router(divisions.router)
 app.include_router(agents.router)
 app.include_router(mission.router)
+app.include_router(custody.router)
 app.include_router(hitl.router)
 app.include_router(audit.router)
 app.include_router(swarm.router)
@@ -79,7 +126,7 @@ async def ws_mission(websocket: WebSocket, mission_id: str):
     verdicts, HITL prompts, ledger entries) live. `onitsirClient.ts`
     subscribes here and calls activityBus's `addNode`/`updateNode`/
     `linkNodes` for each event, using DenyReason/Verdict to set node
-    color/state — no changes needed to MindMap.tsx itself."""
+    color/state â no changes needed to MindMap.tsx itself."""
     await websocket.accept()
     from .routes.mission import _MISSIONS, _mission_events
 

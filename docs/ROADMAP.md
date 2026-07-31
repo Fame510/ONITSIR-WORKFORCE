@@ -13,40 +13,55 @@ constrain what the project can honestly claim.
 
 ## 1. Enforced constraint, not only decided constraint
 
-**Status: open. This is the most important item in this document.**
+**Status: closed in SP/1.0-Custody, within the scope stated below.**
 
-Today `decide()` returns a verdict and the caller is trusted to honour it. The
-daemon holds the signing key but not the protected capability, so a caller that
-ignores a `DENY` is not stopped by SHACKLE. That means the current, defensible
-claim is about **decision evidence** — that given an input, the decision is
-deterministic, reproducible, and recorded in a tamper-evident chain — and not
-about **enforced constraint**.
+Previously `decide()` returned a verdict and the caller was trusted to honour
+it. The daemon held the signing key but not the protected capability, so a
+caller that ignored a `DENY` was not stopped by SHACKLE. The defensible claim
+was therefore about **decision evidence**, not **enforced constraint**. That
+distinction was raised by an independent reviewer and it was correct.
 
-This distinction was raised by an independent reviewer and it is correct. Until
-this item closes, the project must not describe the executor as demonstrably
-constrained.
+What closes it, in the terms this document originally set out:
 
-Closing it requires the enforcement point to own the capability, so that
-obtaining the capability is impossible without passing through the decision.
-Concretely:
+- a capability handle that is only mintable by the decision layer -
+  `onitsir/custody/daemon.py`. `CustodyDaemon.authorize()` runs
+  `Governor.evaluate()` and mints only on `ALLOW`. `CapabilityHolder.mint()`
+  is not reachable from route code.
+- the protected operation reachable only via that handle -
+  `onitsir/custody/executor.py`. Every tool in `PROTECTED_TOOLS` redeems a
+  capability before its implementation is looked up.
+- a test that demonstrates a caller *attempting* to bypass the decision and
+  failing, rather than a caller choosing to comply -
+  `test_a_protected_tool_cannot_run_without_a_capability`,
+  `test_execute_refuses_a_caller_that_ignored_a_deny`, and the rest of
+  `tests/test_custody.py` and `tests/test_custody_routes.py`.
 
-- a capability handle that is only mintable by the decision layer,
-- the protected operation reachable only via that handle,
-- and a conformance vector that demonstrates a caller *attempting* to bypass
-  the decision and failing, rather than a caller choosing to comply.
+**Remaining scope, stated so nothing is over-read.** The guarantee covers the
+tools in `onitsir.custody.PROTECTED_TOOLS`; a tool outside that set runs
+without a capability by design. It is per-process and in-memory, so it does
+not survive a restart (item 5). It constrains what a caller may execute, not
+who may call, because the server still has no authentication (item 4). And
+there is still **no conformance vector** for custody: the bypass-resistance
+claim rests on the repository's own tests, not on the published fixture set,
+and no third party has verified it.
 
 ## 2. Scoped, single-use, argument-bound authorization
 
-**Status: open. Depends on item 1.**
+**Status: closed in SP/1.0-Custody, at both layers.**
 
-A verdict is not currently bound to the arguments it was granted for. There is
-no nonce-scoped, single-use, argument-digest-bound authorization, so an
-`ALLOW` obtained for one set of arguments is not cryptographically tied to
-them. Nonce replay is detected (precedence step 3), but that is duplicate
-detection, not argument binding.
+At the decision layer, an operator approval is now bound to `tool_name`,
+`nonce` and the canonical digest of the arguments it was granted for, and is
+retired the moment it is consumed. An approval authorises one call. See
+`onitsir/hitl_transition.py` and precedence steps 3c and 4b in
+[`docs/SHACKLE.md`](SHACKLE.md).
 
-Closing it requires the verdict to carry a digest of the canonicalized
-arguments and the enforcement point to reject a mismatch.
+At the enforcement layer, the capability carries `mission_id`, `tool_name`,
+`nonce`, `args_digest` and `expires_at`, all covered by an HMAC-SHA256
+signature, and is removed from the live set before any binding check so a
+misaimed token is burned rather than left available for a better-aimed second
+attempt. An `ALLOW` obtained for one set of arguments is cryptographically
+useless for another.
+
 
 ## 3. Canonicalization limitations
 
@@ -92,7 +107,7 @@ across a restart.
 
 **Status: open.**
 
-CI runs 257 tests across nine job instances but measures no coverage. There is
+CI runs 347 tests across nine job instances but measures no coverage. There is
 no `pytest-cov` run and no minimum-coverage gate, so "well tested" is currently
 an assertion about test count rather than a measured property.
 
