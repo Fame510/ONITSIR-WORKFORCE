@@ -9,6 +9,14 @@
  *   Playwright  - real browser control via the local companion service
  *   KlingAI     - image and video generation
  *
+ * SP/1.0-Custody: every side-effecting method below routes through
+ * `guardedToolCall()`, which performs the authorization round-trip and
+ * throws `PolicyDeniedError` / `HitlRequiredError` / `CustodyRefusedError`
+ * rather than returning a value a caller could ignore. Read-only methods
+ * (whoami, listRepos, readFile, getTree, listBranches, listWorkflowRuns) are
+ * deliberately not guarded: they have no side effect, and gating them would
+ * make the governance record noisy without making anything safer.
+ *
  * SYNERGY #7 (Evidence-wrap tool-integration side effects): `asEvidence()`
  * wraps a side-effecting call (GitHub writeFile/createIssue/createRepo, a
  * Firecrawl scrape, ...) so its outcome is recorded as onitsir-core
@@ -20,6 +28,7 @@
  */
 import { loadConfig } from "./keyVault";
 import { getBackendUrl } from "./onitsirClient";
+import { guardedToolCall } from "./guardedToolCall";
 
 /**
  * SYNERGY #7: run `fn()`, capture success/failure as Evidence-shaped JSON,
@@ -154,35 +163,47 @@ export const github = {
     missionId: string | null = null
   ): Promise<unknown> {
     const callSignature = "PUT /repos/" + owner + "/" + repo + "/contents/" + path;
-    return asEvidence(missionId, "github.writeFile", callSignature, async () => {
-      let sha: string | undefined;
-      try {
-        const existing = await github.readFile(owner, repo, path, branch);
-        sha = existing.sha;
-      } catch {
-        sha = undefined; // new file
-      }
-      const body: Record<string, unknown> = {
-        message,
-        content: btoa(unescape(encodeURIComponent(content)))
-      };
-      if (sha) body.sha = sha;
-      if (branch) body.branch = branch;
-      return githubRequest("/repos/" + owner + "/" + repo + "/contents/" + path, {
-        method: "PUT",
-        body: JSON.stringify(body)
-      });
-    });
+    return guardedToolCall(
+      {
+        missionId,
+        toolName: "github.writeFile",
+        params: { owner, repo, path, message, branch: branch ?? null }
+      },
+      () =>
+        asEvidence(missionId, "github.writeFile", callSignature, async () => {
+          let sha: string | undefined;
+          try {
+            const existing = await github.readFile(owner, repo, path, branch);
+            sha = existing.sha;
+          } catch {
+            sha = undefined; // new file
+          }
+          const body: Record<string, unknown> = {
+            message,
+            content: btoa(unescape(encodeURIComponent(content)))
+          };
+          if (sha) body.sha = sha;
+          if (branch) body.branch = branch;
+          return githubRequest("/repos/" + owner + "/" + repo + "/contents/" + path, {
+            method: "PUT",
+            body: JSON.stringify(body)
+          });
+        })
+    );
   },
 
   /** SYNERGY #7: evidence-wrapped. */
   createIssue(owner: string, repo: string, title: string, body: string, missionId: string | null = null): Promise<unknown> {
     const callSignature = "POST /repos/" + owner + "/" + repo + "/issues";
-    return asEvidence(missionId, "github.createIssue", callSignature, () =>
-      githubRequest("/repos/" + owner + "/" + repo + "/issues", {
-        method: "POST",
-        body: JSON.stringify({ title, body })
-      })
+    return guardedToolCall(
+      { missionId, toolName: "github.createIssue", params: { owner, repo, title } },
+      () =>
+        asEvidence(missionId, "github.createIssue", callSignature, () =>
+          githubRequest("/repos/" + owner + "/" + repo + "/issues", {
+            method: "POST",
+            body: JSON.stringify({ title, body })
+          })
+        )
     );
   },
 
@@ -191,11 +212,15 @@ export const github = {
    * not LLM "it probably worked" vibes. */
   createRepo(name: string, description = "", isPrivate = false, missionId: string | null = null): Promise<unknown> {
     const callSignature = "POST /user/repos {name:" + name + "}";
-    return asEvidence(missionId, "github.createRepo", callSignature, () =>
-      githubRequest("/user/repos", {
-        method: "POST",
-        body: JSON.stringify({ name, description, private: isPrivate, auto_init: true })
-      })
+    return guardedToolCall(
+      { missionId, toolName: "github.createRepo", params: { name, private: isPrivate } },
+      () =>
+        asEvidence(missionId, "github.createRepo", callSignature, () =>
+          githubRequest("/user/repos", {
+            method: "POST",
+            body: JSON.stringify({ name, description, private: isPrivate, auto_init: true })
+          })
+        )
     );
   },
 
@@ -203,12 +228,24 @@ export const github = {
     return githubRequest("/repos/" + owner + "/" + repo + "/actions/runs?per_page=20");
   },
 
-  /** Escape hatch: any REST path the agents need. */
-  raw(path: string, method = "GET", body?: unknown): Promise<unknown> {
-    return githubRequest(path, {
-      method,
-      ...(body ? { body: JSON.stringify(body) } : {})
-    });
+  /**
+   * Escape hatch: any REST path the agents need.
+   *
+   * A `GET` runs directly, because it has no side effect. Anything else is
+   * guarded: this method is the widest surface in the file and an unguarded
+   * escape hatch would make every other guard decorative.
+   */
+  raw(path: string, method = "GET", body?: unknown, missionId: string | null = null): Promise<unknown> {
+    const call = () =>
+      githubRequest(path, {
+        method,
+        ...(body ? { body: JSON.stringify(body) } : {})
+      });
+    if (method.toUpperCase() === "GET") return call();
+    return guardedToolCall(
+      { missionId, toolName: "github.raw", params: { path, method } },
+      call
+    );
   }
 };
 
@@ -217,45 +254,66 @@ export const firecrawl = {
     return Boolean(loadConfig().integrations.firecrawlKey);
   },
 
-  /** Scrapes one URL to markdown. */
-  async scrape(url: string): Promise<string> {
+  /**
+   * Scrapes one URL to markdown.
+   *
+   * Guarded despite reading rather than writing: it spends metered credit and
+   * makes an outbound request to a third party on the operator's behalf, both
+   * of which are exactly what the budget and ethics layers exist to bound.
+   */
+  async scrape(url: string, missionId: string | null = null): Promise<string> {
     const key = loadConfig().integrations.firecrawlKey;
     if (!key) throw new Error("No Firecrawl key saved.");
-    const response = await fetch("https://api.firecrawl.dev/v2/scrape", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
-      body: JSON.stringify({ url, formats: ["markdown"] })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error("Firecrawl " + response.status + ": " + JSON.stringify(data).slice(0, 200));
-    return data?.data?.markdown || data?.data?.content || "";
+    return guardedToolCall(
+      { missionId, toolName: "firecrawl.scrape", params: { url } },
+      async () => {
+        const response = await fetch("https://api.firecrawl.dev/v2/scrape", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+          body: JSON.stringify({ url, formats: ["markdown"] })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error("Firecrawl " + response.status + ": " + JSON.stringify(data).slice(0, 200));
+        return data?.data?.markdown || data?.data?.content || "";
+      }
+    );
   },
 
-  /** Discovers URLs on a site. */
-  async map(url: string, search?: string): Promise<string[]> {
+  /** Discovers URLs on a site. Guarded for the same reason as `scrape`. */
+  async map(url: string, search?: string, missionId: string | null = null): Promise<string[]> {
     const key = loadConfig().integrations.firecrawlKey;
     if (!key) throw new Error("No Firecrawl key saved.");
-    const response = await fetch("https://api.firecrawl.dev/v2/map", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
-      body: JSON.stringify({ url, ...(search ? { search } : {}) })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error("Firecrawl " + response.status);
-    const links = data?.links || data?.data?.links || [];
-    return links.map((l: string | { url?: string }) => (typeof l === "string" ? l : l.url || "")).filter(Boolean);
+    return guardedToolCall(
+      { missionId, toolName: "firecrawl.map", params: { url, search: search ?? null } },
+      async () => {
+        const response = await fetch("https://api.firecrawl.dev/v2/map", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+          body: JSON.stringify({ url, ...(search ? { search } : {}) })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error("Firecrawl " + response.status);
+        const links = data?.links || data?.data?.links || [];
+        return links.map((l: string | { url?: string }) => (typeof l === "string" ? l : l.url || "")).filter(Boolean);
+      }
+    );
   },
 
-  async search(query: string): Promise<unknown> {
+  async search(query: string, missionId: string | null = null): Promise<unknown> {
     const key = loadConfig().integrations.firecrawlKey;
     if (!key) throw new Error("No Firecrawl key saved.");
-    const response = await fetch("https://api.firecrawl.dev/v2/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
-      body: JSON.stringify({ query, limit: 8 })
-    });
-    if (!response.ok) throw new Error("Firecrawl " + response.status);
-    return response.json();
+    return guardedToolCall(
+      { missionId, toolName: "firecrawl.search", params: { query } },
+      async () => {
+        const response = await fetch("https://api.firecrawl.dev/v2/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+          body: JSON.stringify({ query, limit: 8 })
+        });
+        if (!response.ok) throw new Error("Firecrawl " + response.status);
+        return response.json();
+      }
+    );
   }
 };
 
@@ -274,15 +332,43 @@ export const playwright = {
     }
   },
 
-  async call(action: string, payload: Record<string, unknown>): Promise<unknown> {
-    const response = await fetch(playwright.baseUrl + "/" + action, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.error || "Browser companion error " + response.status);
-    return data;
+  /**
+   * The single choke point for every companion action, so guarding here
+   * guards `open`, `click`, `type`, `screenshot`, `close` and KlingAI
+   * generation at once. Driving a real browser is a side effect on the
+   * operator's machine, so none of it is treated as read-only.
+   *
+   * `payload` is not passed to the governor: it can carry provider secrets
+   * (KlingAI signing keys) and must not be written into a mission's argument
+   * digest, an event stream or a ledger. The bound arguments are the action
+   * and, where present, the target URL or selector.
+   */
+  async call(
+    action: string,
+    payload: Record<string, unknown>,
+    missionId: string | null = null
+  ): Promise<unknown> {
+    return guardedToolCall(
+      {
+        missionId,
+        toolName: "playwright." + action,
+        params: {
+          action,
+          ...(typeof payload.url === "string" ? { url: payload.url } : {}),
+          ...(typeof payload.selector === "string" ? { selector: payload.selector } : {})
+        }
+      },
+      async () => {
+        const response = await fetch(playwright.baseUrl + "/" + action, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data?.error || "Browser companion error " + response.status);
+        return data;
+      }
+    );
   },
 
   /** Opens a real browser window the agent can drive. */

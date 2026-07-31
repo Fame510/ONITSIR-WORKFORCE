@@ -12,8 +12,8 @@ implying it.
 |---|---|---|
 | `onitsir-core` (pytest) | 258 | `cd packages/onitsir-core && python -m pytest tests/ -v` |
 | `onitsir-server` (pytest) | 45 | `cd packages/onitsir-server && python -m pytest tests/ -v` |
-| `agentosirus-web` (vitest) | 44 | `cd packages/agentosirus-web && npm run test` |
-| **Total automated tests** | **347** | |
+| `agentosirus-web` (vitest) | 69 | `cd packages/agentosirus-web && npm run test` |
+| **Total automated tests** | **372** | |
 | TypeScript strict compile | 0 errors | `npx tsc --noEmit` |
 | SP/1.0 conformance vectors | 12 | `onitsir conformance` |
 | Governance type-drift check | pass | `node infra/scripts/sync-shackle-types.mjs --check` |
@@ -70,11 +70,12 @@ type-check, provider-contract conformance check, and a production Vite build.
 `test_api.py` asserts live counts rather than hardcoded ones: `/health` and the
 sum of `agentCount` across divisions must both equal the real roster size.
 
-## agentosirus-web â 44 tests
+## agentosirus-web â 69 tests
 
 | File | Tests | Covers |
 |---|---|---|
 | `evidenceMirror.test.ts` | 25 | Offline mirror parity with the Python producer |
+| `guardedToolCall.test.ts` | 25 | Client-side custody: refusal is thrown not returned, offline refuses protected tools, capability presented to /execute, argument and nonce binding |
 | `qec.test.ts` | 8 | Deterministic-collapse sanity filter |
 | `localLedger.test.ts` | 6 | Local hash-chained ledger |
 | `contextTiering.test.ts` | 5 | HOT/WARM/COLD context tiering |
@@ -153,7 +154,7 @@ its tests must change in the same commit â see
 Stated plainly so no reader infers more than CI proves.
 
 - **No coverage measurement.** There is no `pytest-cov` run and no
-  minimum-coverage gate. 347 tests is a count, not a coverage figure. Tracked as
+  minimum-coverage gate. 372 tests is a count, not a coverage figure. Tracked as
   [`docs/ROADMAP.md`](docs/ROADMAP.md) item 6.
 - **No static security analysis in CI.** A manual audit confirms no `eval`,
   `exec`, `os.system`, `subprocess` or `pickle` anywhere in the Python source,
@@ -170,6 +171,17 @@ Stated plainly so no reader infers more than CI proves.
   before the tool implementation is reached. The scope is the tools in
   `onitsir.custody.PROTECTED_TOOLS`, in-process, for one server process. No
   conformance vector covers custody yet, and no third party has verified it.
+- **The browser guard is a call-path discipline, not an enforcement point.**
+  `guardedToolCall()` is the only sanctioned way for the web surface to make a
+  side-effecting call, and `guardedToolCall.test.ts` asserts that a refusal is
+  thrown rather than returned, that offline mode refuses a protected tool
+  instead of running it unmediated, and that the capability and arguments
+  presented to `/execute` are the ones that were authorized. None of that is a
+  security boundary: the browser runs code the operator controls, so the guard
+  can be bypassed by editing the client. The boundary is the server's 403.
+  There is also no lint rule enforcing that new call sites use the wrapper;
+  `integrations.ts` routes its side-effecting methods through it structurally
+  instead, and the rule to add is written down in `guardedToolCall.ts`.
 - **`infra/Dockerfile.onitsir-server` is not built by CI.** Its context bug was
   found by inspection, not by a failing job.
 

@@ -7,7 +7,7 @@
 <div align="center">
 
 [![CI](https://github.com/Fame510/ONITSIR-WORKFORCE/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fame510/ONITSIR-WORKFORCE/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-347%20passing-brightgreen)](TEST_REPORT.md)
+[![Tests](https://img.shields.io/badge/tests-372%20passing-brightgreen)](TEST_REPORT.md)
 [![Conformance](https://img.shields.io/badge/SP%2F1.0-12%20vectors-blue)](docs/SHACKLE.md)
 [![Code license: AGPL v3](https://img.shields.io/badge/code-AGPL--3.0-blue)](LICENSE)
 [![Spec license: CC BY 4.0](https://img.shields.io/badge/spec-CC%20BY%204.0-lightgrey)](LICENSE-SPEC)
@@ -154,7 +154,7 @@ VITE_BACKEND_URL=http://localhost:8000 npm run dev
 Run the frontend test suite:
 
 ```bash
-npm run test             # vitest â 44 tests
+npm run test             # vitest â 69 tests
 npx tsc --noEmit          # strict type-check â 0 errors
 node scripts/conformance-check.mjs   # SYNERGY #20 TS-side provider contract check
 ```
@@ -198,8 +198,8 @@ Every ruling is recorded in a hash-chained, optionally Ed25519-signed
 
 ## Test results
 
-**347 automated tests pass** across the whole system â 258 `onitsir-core` and
-45 `onitsir-server` pytest tests, plus 44 `agentosirus-web` vitest tests â
+**372 automated tests pass** across the whole system â 258 `onitsir-core` and
+45 `onitsir-server` pytest tests, plus 69 `agentosirus-web` vitest tests â
 alongside a clean TypeScript strict-mode compile and the 12-vector SP/1.0
 conformance suite. All of it runs in CI on every push across nine job
 instances, against Python 3.10, 3.11 and 3.12, and the merge gate requires all
@@ -210,7 +210,7 @@ Full breakdown, including what is deliberately **not** measured, in
 
 What is not measured, stated here so nothing is inferred from a test count:
 there is no coverage measurement and no coverage gate, no static security
-analysis in CI, and no property-based tests. 347 is a count, not a coverage
+analysis in CI, and no property-based tests. 372 is a count, not a coverage
 figure. See [`docs/ROADMAP.md`](docs/ROADMAP.md) items 6 to 8.
 
 ## Conformance
@@ -271,6 +271,16 @@ are tamper-**evident**, not tamper-proof, and when signing is enabled the key
 lives in the same process as the ledger. The server still has no
 authentication, authorization or rate limiting (item 4), so custody constrains
 *what an authenticated-by-nothing caller may execute*, not *who may call*.
+
+**The browser half is discipline, not a fourth tier.** Every side-effecting
+method in `agentosirus-web/src/lib/integrations.ts` routes through
+`guardedToolCall()`, which performs the authorization round-trip, throws on
+anything that is not an `ALLOW` so a refusal cannot be read as a warning and
+ignored, and refuses a protected tool outright when there is no backend to
+mediate it rather than silently running unmediated. That is a call-path
+property of code the operator controls, so it is not a security boundary and
+is not counted as one: the boundary is the server's `403`. It is tested in
+`guardedToolCall.test.ts`.
 
 **No part of this repository has been independently verified.** See
 [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md) and the scope note below.
