@@ -1,0 +1,32 @@
+[
+  {
+    "id": "IL-1-v1",
+    "clause": "IL-1",
+    "input": { "has_evidence": false },
+    "expect": { "accepted": false }
+  },
+  {
+    "id": "IL-2-v1",
+    "clause": "IL-2",
+    "input": { "has_evidence": true, "passed": false, "output": "1 failed, 0 passed" },
+    "expect": { "accepted": false }
+  },
+  {
+    "id": "IL-3-v1",
+    "clause": "IL-3",
+    "input": { "has_evidence": true, "passed": true, "output": "ok", "age_s": 9999, "max_age_s": 60 },
+    "expect": { "accepted": false }
+  },
+  {
+    "id": "IL-4-v1",
+    "clause": "IL-4",
+    "input": { "has_evidence": true, "passed": true, "output": "3 passed, 0 failed", "command": "pytest" },
+    "expect": { "accepted": true }
+  },
+  {
+    "id": "IL-4-v2-empty-output",
+    "clause": "IL-4",
+    "input": { "has_evidence": true, "passed": true, "output": "", "command": "pytest" },
+    "expect": { "accepted": false }
+  }
+]

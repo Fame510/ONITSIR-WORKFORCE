@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "onitsir-core"
+version = "1.0.0"
+description = "ONITSIR unified governed engine: Roster + Router + Shackle Governor + Iron Law verification + Workflow phase machine + Swarm coordinator + Conformance suite. The Python 'brain' half of the unified ONITSIR/agentosirus system."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Fame510 / ONITSIR unification project" }]
+dependencies = [
+    "pydantic>=2.5",
+]
+
+[project.optional-dependencies]
+crypto = ["pynacl>=1.5"]
+dev = ["pytest>=7.4", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+onitsir = "onitsir.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["onitsir*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

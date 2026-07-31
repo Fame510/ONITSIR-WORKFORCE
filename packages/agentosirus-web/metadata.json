@@ -1,0 +1,8 @@
+{
+  "name": "The Agency: AI Specialists (ONITSIR-unified)",
+  "description": "An interactive workspace, team builder, and chat playground for The Agency's AI specialist roster -- the specialist count is a live, computed value (see GET /api/divisions), not a hardcoded figure (SYNERGY #9: this fixes the historical '144 vs 163 vs 164' drift).",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

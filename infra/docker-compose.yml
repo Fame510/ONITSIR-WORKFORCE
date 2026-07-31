@@ -1,0 +1,67 @@
+# infra/docker-compose.yml
+#
+# Deployment topology (architecture doc section 2.3, item 7): two processes
+# -- onitsir-server (Python, FastAPI, owns Roster/Governor/Workflow/Engine
+# state) and agentosirus-web (Vite/React static build + optional Node
+# companion for privileged actions) -- reverse-proxied together (following
+# ADROS's Nginx + FastAPI Docker Compose pattern) so the browser only ever
+# talks to one origin.
+version: "3.9"
+
+services:
+  onitsir-server:
+    build:
+      context: ../packages/onitsir-server
+      dockerfile: ../../infra/Dockerfile.onitsir-server
+    environment:
+      - ONITSIR_SHACKLE_RULES=/app/data/shackle_rules/onitsir-baseline.shackle.json
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../packages/onitsir-core/data:/app/data:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  agentosirus-web:
+    build:
+      context: ../packages/agentosirus-web
+      dockerfile: ../../infra/Dockerfile.agentosirus-web
+    environment:
+      - VITE_BACKEND_URL=http://localhost:8000
+    ports:
+      - "4173:4173"
+    depends_on:
+      onitsir-server:
+        condition: service_healthy
+
+  companion:
+    build:
+      context: ../packages/agentosirus-web/companion
+      dockerfile: ../../../infra/Dockerfile.companion
+    environment:
+      - ONITSIR_BACKEND_URL=http://onitsir-server:8000
+    ports:
+      - "8787:8787"
+    depends_on:
+      - onitsir-server
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - onitsir-server
+      - agentosirus-web
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+    ports:
+      - "9090:9090"

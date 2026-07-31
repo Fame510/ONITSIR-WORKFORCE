@@ -1,0 +1,35 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / Vite ---
+node_modules/
+packages/agentosirus-web/dist/
+packages/agentosirus-web/public/agents-index.json
+packages/agentosirus-web/public/agents-content/
+packages/agentosirus-web/public/roster.json
+packages/agentosirus-web/public/.nojekyll
+.vite/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# --- Secrets: never commit ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key

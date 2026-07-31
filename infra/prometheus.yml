@@ -1,0 +1,20 @@
+# infra/prometheus.yml — observability, ported from ADROS's monitoring
+# setup. Scrapes onitsir-server's /health endpoint and (if a metrics
+# exporter is added) a /metrics endpoint for Governor verdict rates, ledger
+# growth, and mission throughput.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - alert_rules.yml
+
+scrape_configs:
+  - job_name: "onitsir-server"
+    metrics_path: /health
+    static_configs:
+      - targets: ["onitsir-server:8000"]
+
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

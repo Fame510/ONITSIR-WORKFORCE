@@ -1,0 +1,42 @@
+[
+  {
+    "id": "GV-1-v1",
+    "clause": "GV-1",
+    "input": {
+      "config": { "budget_usd": 10.0 },
+      "state": { "circuit_tripped": true },
+      "call": { "tool_name": "web.search", "params": {} }
+    },
+    "expect": { "verdict": "DENY" }
+  },
+  {
+    "id": "GV-2-v1",
+    "clause": "GV-2",
+    "input": {
+      "config": { "budget_usd": 10.0 },
+      "state": { "budget_remaining_usd": 0.0 },
+      "call": { "tool_name": "llm.generate", "params": {} }
+    },
+    "expect": { "verdict": "DENY" }
+  },
+  {
+    "id": "GV-3-v1",
+    "clause": "GV-3",
+    "input": {
+      "config": { "budget_usd": 10.0, "hitl_mode": "always" },
+      "state": {},
+      "call": { "tool_name": "email.send", "params": {} }
+    },
+    "expect": { "verdict": "HITL" }
+  },
+  {
+    "id": "GV-4-v1",
+    "clause": "GV-4",
+    "input": {
+      "config": { "budget_usd": 10.0 },
+      "state": { "budget_remaining_usd": 5.0 },
+      "call": { "tool_name": "web.search", "params": {} }
+    },
+    "expect": { "verdict": "ALLOW" }
+  }
+]

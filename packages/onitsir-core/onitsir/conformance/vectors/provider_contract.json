@@ -1,0 +1,20 @@
+[
+  {
+    "id": "PC-1-v1-ok",
+    "clause": "PC-1",
+    "input": { "result": { "text": "hello world", "provider": "openrouter", "model": "gpt-x" } },
+    "expect": { "should_pass": true }
+  },
+  {
+    "id": "PC-1-v2-missing-text",
+    "clause": "PC-1",
+    "input": { "result": { "text": "", "provider": "openrouter" } },
+    "expect": { "should_pass": false }
+  },
+  {
+    "id": "PC-1-v3-missing-provider",
+    "clause": "PC-1",
+    "input": { "result": { "text": "hi" } },
+    "expect": { "should_pass": false }
+  }
+]

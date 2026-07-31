@@ -1,0 +1,12 @@
+# infra/alert_rules.yml — ported from ADROS's alerting pattern.
+groups:
+  - name: onitsir-server
+    rules:
+      - alert: OnitsirServerDown
+        expr: up{job="onitsir-server"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "onitsir-server is unreachable"
+          description: "The FastAPI bridge has not responded to /health scrapes for 1 minute."

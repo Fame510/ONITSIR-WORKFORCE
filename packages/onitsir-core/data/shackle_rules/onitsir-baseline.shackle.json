@@ -1,0 +1,36 @@
+{
+  "standard": "SHACKLE",
+  "version": "onitsir-baseline-1.0",
+  "rules": [
+    {
+      "name": "SHACKLE-1:no_human_harm",
+      "any_tags": ["human_harm", "lethal_force"],
+      "reason": "SHACKLE-1: never execute an action expected to physically harm a human."
+    },
+    {
+      "name": "SHACKLE-2:no_hostile_action",
+      "any_tags": ["hostile_action", "weaponization"],
+      "reason": "SHACKLE-2: the platform must not be used to attack or as a weapon."
+    },
+    {
+      "name": "SHACKLE-3:no_operator_deception",
+      "any_tags": ["deception"],
+      "reason": "SHACKLE-3: never deceive or conceal state from the human operator."
+    },
+    {
+      "name": "SHACKLE-4:no_public_repo_without_consent",
+      "all_tags": ["github_write", "public_repo"],
+      "reason": "SHACKLE-4: never let a specialist write to a public GitHub repo without an explicit consent_given tag."
+    },
+    {
+      "name": "SHACKLE-5:no_irreversible_without_review",
+      "require_reversible_if_tags": ["irreversible_harm", "destructive_action"],
+      "reason": "SHACKLE-5: irreversible or destructive actions require an explicit reversible=true acknowledgement or human review."
+    },
+    {
+      "name": "SHACKLE-6:forbid_production_environment_writes",
+      "forbid_environment": ["production"],
+      "reason": "SHACKLE-6: this action's environment is on the forbidden list (e.g. writes gated out of 'production' by policy)."
+    }
+  ]
+}

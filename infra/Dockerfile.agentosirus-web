@@ -1,0 +1,7 @@
+# infra/Dockerfile.agentosirus-web
+FROM node:20-slim
+WORKDIR /app
+COPY . /app
+RUN npm install && npm run build
+EXPOSE 4173
+CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0"]
