@@ -8,8 +8,29 @@ version = "1.0.0"
 description = "ONITSIR unified governed engine: Roster + Router + Shackle Governor + Iron Law verification + Workflow phase machine + Swarm coordinator + Conformance suite. The Python 'brain' half of the unified ONITSIR/agentosirus system."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
-authors = [{ name = "Fame510 / ONITSIR unification project" }]
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "Dante Bullock" }]
+maintainers = [{ name = "Dante Bullock" }]
+keywords = [
+    "ai-agents",
+    "ai-governance",
+    "agent-framework",
+    "autonomous-agents",
+    "conformance",
+    "shackle",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 dependencies = [
     "pydantic>=2.5",
 ]
@@ -17,6 +38,11 @@ dependencies = [
 [project.optional-dependencies]
 crypto = ["pynacl>=1.5"]
 dev = ["pytest>=7.4", "pytest-asyncio>=0.23"]
+
+[project.urls]
+Homepage = "https://github.com/Fame510/ONITSIR-WORKFORCE"
+Repository = "https://github.com/Fame510/ONITSIR-WORKFORCE"
+Issues = "https://github.com/Fame510/ONITSIR-WORKFORCE/issues"
 
 [project.scripts]
 onitsir = "onitsir.cli:main"

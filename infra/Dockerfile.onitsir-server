@@ -1,8 +1,39 @@
 # infra/Dockerfile.onitsir-server
+#
+# Build context is the REPOSITORY ROOT, not packages/onitsir-server.
+# onitsir-server depends on onitsir-core as a local path dependency, so both
+# package trees must be inside the context. The previous version used
+# `COPY ../onitsir-core` with a context of packages/onitsir-server, which
+# Docker rejects: COPY cannot reference a path outside the build context.
+#
+#   docker build -f infra/Dockerfile.onitsir-server .
+#
 FROM python:3.11-slim
+
+# curl is needed by the compose healthcheck.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
 WORKDIR /app
-COPY ../onitsir-core /onitsir-core
-COPY . /app
-RUN pip install --no-cache-dir /onitsir-core && pip install --no-cache-dir .
+
+# Copy the core first so its layer is cached independently of server changes.
+COPY packages/onitsir-core /src/onitsir-core
+RUN pip install --no-cache-dir "/src/onitsir-core[crypto]"
+
+COPY packages/onitsir-server /app
+RUN pip install --no-cache-dir .
+
+# Run as a non-root user.
+RUN useradd --create-home --uid 10001 onitsir && chown -R onitsir:onitsir /app
+USER onitsir
+
 EXPOSE 8000
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=5 \
+    CMD curl -fsS http://localhost:8000/health || exit 1
+
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

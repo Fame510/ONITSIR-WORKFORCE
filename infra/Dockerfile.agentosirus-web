@@ -1,7 +1,29 @@
 # infra/Dockerfile.agentosirus-web
+#
+# Build context is packages/agentosirus-web.
+#
+#   docker build -f infra/Dockerfile.agentosirus-web packages/agentosirus-web
+#
 FROM node:20-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
+
+# Install from the lockfile first so dependencies cache independently of source.
+# npm ci, not npm install: the lockfile is authoritative and npm install would
+# silently rewrite it inside the image.
+COPY package.json package-lock.json ./
+RUN npm ci
+
 COPY . /app
-RUN npm install && npm run build
+RUN npm run build
+
 EXPOSE 4173
-CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0"]
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=5 \
+    CMD curl -fsS http://localhost:4173/ || exit 1
+
+CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "4173"]

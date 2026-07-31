@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,10 +26,30 @@ from onitsir.swarm import SwarmCoordinator
 
 from .routes import agents, audit, divisions, hitl, mission, swarm
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Warm the roster and swarm coordinator once, before serving traffic.
+
+    This replaces the deprecated `@app.on_event("startup")` hook. Roster.load()
+    reads and indexes the roster from disk, which is why it is done once here
+    rather than per request.
+
+    Note for callers and tests: the roster is only attached inside this
+    context. A bare `TestClient(app)` without the `with` block never enters
+    the lifespan, so `app.state.roster` will be unset and `/health` will
+    report `roster_size: 0`. Always use `with TestClient(app) as client:`.
+    """
+    app.state.roster = Roster.load()
+    app.state.swarm_coordinator = SwarmCoordinator()
+    yield
+
+
 app = FastAPI(
     title="onitsir-server",
     description="FastAPI bridge exposing onitsir-core's governed Engine to agentosirus-web.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -36,12 +58,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    app.state.roster = Roster.load()
-    app.state.swarm_coordinator = SwarmCoordinator()
 
 
 app.include_router(divisions.router)

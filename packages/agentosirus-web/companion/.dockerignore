@@ -1,0 +1,11 @@
+# Build context for infra/Dockerfile.companion.
+.git
+node_modules
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+npm-debug.log*
+Dockerfile*
+.dockerignore

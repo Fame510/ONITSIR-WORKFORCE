@@ -1,0 +1,27 @@
+# Build context for infra/Dockerfile.onitsir-server is the repository root, so
+# keep everything irrelevant to the Python packages out of the context.
+.git
+.github
+.gitignore
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.egg-info
+**/.venv
+**/venv
+**/node_modules
+**/dist
+**/build
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+docs
+research
+packages/agentosirus-web
+infra
+*.md
+!README.md

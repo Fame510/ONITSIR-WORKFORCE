@@ -1,4 +1,20 @@
-# ONITSIR (unified) — "On It, Sir."
+<div align="center">
+  <img src="assets/logo.png" alt="ONITSIR" width="360" />
+</div>
+
+# ONITSIR-WORKFORCE — "On It, Sir."
+
+<div align="center">
+
+[![CI](https://github.com/Fame510/ONITSIR-WORKFORCE/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Fame510/ONITSIR-WORKFORCE/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-257%20passing-brightgreen)](TEST_REPORT.md)
+[![Conformance](https://img.shields.io/badge/SP%2F1.0-12%20vectors-blue)](docs/SHACKLE.md)
+[![Code license: AGPL v3](https://img.shields.io/badge/code-AGPL--3.0-blue)](LICENSE)
+[![Spec license: CC BY 4.0](https://img.shields.io/badge/spec-CC%20BY%204.0-lightgrey)](LICENSE-SPEC)
+[![Fixtures: Apache 2.0](https://img.shields.io/badge/fixtures-Apache--2.0-lightgrey)](LICENSE-FIXTURES)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](packages/onitsir-core)
+
+</div>
 
 A two-process, two-language AI agency operating system that fuses **ONITSIR**
 (the governed execution core) and **agentosirus** (the execution surface and
@@ -16,9 +32,13 @@ all 25 synergies implemented here.
 
 ## What this system is
 
-- **The Roster** — a unified specialist workforce (164+ specialists across
-  14 categories), resolving both ONITSIR's JSON metadata and agentosirus's
-  full markdown persona bodies from a single source of truth.
+- **The Roster** — a unified specialist workforce: **164 specialist records
+  across 14 categories** in a single source of truth, resolving ONITSIR's JSON
+  metadata and agentosirus's markdown persona bodies through one loader.
+  Note that this release ships **one** full persona markdown body; the other
+  163 entries are metadata records without a persona file. The CI roster smoke
+  test prints the indexed persona count directly, so the gap is visible rather
+  than implied. Tracked as [`docs/ROADMAP.md`](docs/ROADMAP.md) item 9.
 - **The Router** — deterministic goal→crew matching, used both as ONITSIR's
   own crew staffer and as a cheap pre-filter for agentosirus's LLM planner.
 - **The Governor (Shackle)** — a fail-closed policy surface (ALLOW/DENY/HITL)
@@ -99,7 +119,7 @@ See [`docs/SYNERGIES.md`](docs/SYNERGIES.md) for full descriptions. Summary:
 ```bash
 cd packages/onitsir-core
 pip install -e .
-python -m pytest tests/ -v          # 103 tests
+python -m pytest tests/ -v          # 198 tests
 
 cd ../onitsir-server
 pip install -e .
@@ -124,7 +144,7 @@ onitsir swarm-demo                  # demo the swarm coordinator (Synergy #17)
 
 ```bash
 cd packages/agentosirus-web
-npm install
+npm ci                   # ci, not install: the lockfile is authoritative
 npm run dev              # static/offline mode (apiShim.ts answers /api/*)
 
 # or, governed mode:
@@ -134,7 +154,7 @@ VITE_BACKEND_URL=http://localhost:8000 npm run dev
 Run the frontend test suite:
 
 ```bash
-npm run test             # vitest — 19 tests
+npm run test             # vitest — 44 tests
 npx tsc --noEmit          # strict type-check — 0 errors
 node scripts/conformance-check.mjs   # SYNERGY #20 TS-side provider contract check
 ```
@@ -175,10 +195,129 @@ Every ruling is recorded in a hash-chained, optionally Ed25519-signed
 
 ## Test results
 
-137 automated tests pass across the whole system (103 onitsir-core + 15
-onitsir-server pytest tests, 19 agentosirus-web vitest tests), plus a clean
-TypeScript strict-mode compile. Full breakdown in
-[`/home/user/workspace/onitsir_unified_test_report.md`](../onitsir_unified_test_report.md).
+**257 automated tests pass** across the whole system — 198 `onitsir-core` and
+15 `onitsir-server` pytest tests, plus 44 `agentosirus-web` vitest tests —
+alongside a clean TypeScript strict-mode compile and the 12-vector SP/1.0
+conformance suite. All of it runs in CI on every push across nine job
+instances, against Python 3.10, 3.11 and 3.12, and the merge gate requires all
+nine.
+
+Full breakdown, including what is deliberately **not** measured, in
+[`TEST_REPORT.md`](TEST_REPORT.md).
+
+What is not measured, stated here so nothing is inferred from a test count:
+there is no coverage measurement and no coverage gate, no static security
+analysis in CI, and no property-based tests. 257 is a count, not a coverage
+figure. See [`docs/ROADMAP.md`](docs/ROADMAP.md) items 6 to 8.
+
+## Conformance
+
+This repository implements **SP/1.0** (`SPEC_VERSION = "1.0.0"`,
+`STANDARD_NAME = "ONITSIR"`), with 12 conformance vectors across three levels:
+
+| Level | Vectors | Clauses |
+|---|---|---|
+| `L1_IRON_LAW` (mandatory) | 5 | IL-1 … IL-4 |
+| `L2_GOVERNANCE` | 4 | GV-1 … GV-4 |
+| `L3_PROVIDER_CONTRACT` | 3 | PC-1 |
+
+For the shipped implementation the runner reports verdict `CONFORMANT` at
+`highest_level = "L3_PROVIDER_CONTRACT"`. Reproduce it with `onitsir conformance`.
+
+The full normative decision surface — all ten precedence steps, the HITL
+transition table, canonicalization rules and their limitations, and an explicit
+"what SHACKLE does not do" section — is specified in
+[`docs/SHACKLE.md`](docs/SHACKLE.md).
+
+Passing the vectors means an implementation reproduces those vectors. It is not
+a security certification and not an endorsement. See
+[`docs/GOVERNANCE.md`](docs/GOVERNANCE.md).
+
+## What SHACKLE does and does not claim
+
+Read this before citing the governance surface anywhere.
+
+**What it does.** Given an input, the decision is deterministic and
+reproducible. Arguments are bound into the canonical hash of the recorded
+entry. Deny reasons carry defined semantics. Every ruling is appended to a
+hash-chained, optionally Ed25519-signed ledger whose integrity is checkable at
+any time. That is **decision evidence**, and the conformance vectors test it.
+
+**What it does not do.** SHACKLE is a decision surface, not an enforcement
+boundary. It does not hold the protected capability and does not mediate the
+call, so a caller that ignores a `DENY` is not stopped by SHACKLE itself.
+Verdicts are not bound to specific arguments — there is no nonce-scoped,
+single-use, argument-digest-bound authorization. The ledger is
+tamper-**evident**, not tamper-proof, and when signing is enabled the key lives
+in the same process as the ledger.
+
+The project therefore does not describe the executor as demonstrably
+constrained. Closing that gap is [`docs/ROADMAP.md`](docs/ROADMAP.md) item 1.
+
+## Independent verification
+
+**Scope note first, so nothing here is misread.** The independent verification
+below was performed against the **SHACKLE reference implementation** at its
+master commit `62dcbc7f`, covering **15** vectors. It was **not** performed
+against this repository, which ships 12 vectors. It is cited here because
+SHACKLE is the governance surface this repository implements, and because the
+distinction the reviewer drew shapes how this project states its claims. No
+part of ONITSIR-WORKFORCE has been independently verified.
+
+With that scope stated: an outside reviewer, GitHub user
+[`nutstrut`](https://github.com/crewAIInc/crewAI/issues/6025#issuecomment-5123740195),
+independently reproduced that conformance material and posted the result
+publicly on 2026-07-29:
+
+> I pulled current master at 62dcbc7f and reran the conformance material: all
+> 15 vectors reproduce, and the v1 hash chain detects tampering and reordering
+> under the published tests.
+
+In the same comment the reviewer drew the distinction this project now uses
+throughout, noting that they would not yet call the executor demonstrably
+constrained, and separating decision evidence from enforced constraint — the
+daemon holds the signing key but not the protected capability. That assessment
+is accurate and is why the section above exists and why
+[`docs/ROADMAP.md`](docs/ROADMAP.md) opens with enforcement.
+
+The same reviewer also corrected an earlier claim of ours. In their words, the
+prior SHACKLE fixture pass they can substantiate is from July 4 against 9
+fixtures, not a June verification. The corrected version is what stands, and
+the incorrect one is not repeated anywhere in this repository.
+
+Scope of that verification, stated precisely: it covers fixture reproduction,
+determinism, argument binding, deny-reason semantics, and the published
+surface. It does **not** cover mediation, custody, bypass resistance,
+production security, or any v2 daemon, and it is not a certification.
+
+## Licensing
+
+Three parts, so a third party can implement and test against the specification
+without taking a copyleft obligation on their own code:
+
+| Part | License | Scope |
+|---|---|---|
+| Code | [AGPL-3.0-or-later](LICENSE) | Everything not listed below |
+| Specification | [CC BY 4.0](LICENSE-SPEC) | `docs/*.md` |
+| Conformance fixtures | [Apache-2.0](LICENSE-FIXTURES) | `packages/onitsir-core/onitsir/conformance/vectors/*.json` |
+
+Attribution string and full rationale in [`NOTICE.md`](NOTICE.md).
+
+## Documentation
+
+| Document | What it is for |
+|---|---|
+| [`docs/SHACKLE.md`](docs/SHACKLE.md) | The normative decision surface |
+| [`docs/API.md`](docs/API.md) | Every route, with limitations |
+| [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md) | Decision authority, frozen surface |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Full design rationale |
+| [`docs/SYNERGIES.md`](docs/SYNERGIES.md) | All 25 synergies |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Running it, with a production checklist |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Every known limitation, and what closing it takes |
+| [`TEST_REPORT.md`](TEST_REPORT.md) | What is tested, and what is not measured |
+| [`SECURITY.md`](SECURITY.md) | Reporting, and the current security posture |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup and the hard rules |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release history |
 
 ## Sourcing
 

@@ -1,0 +1,15 @@
+# Build context for infra/Dockerfile.agentosirus-web.
+.git
+node_modules
+dist
+build
+.vite
+coverage
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+npm-debug.log*
+Dockerfile*
+.dockerignore
